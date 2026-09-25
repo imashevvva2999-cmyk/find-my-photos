@@ -5,6 +5,8 @@ data/
 photos/
 photo 2/
 *.sql
+# ...except the schema migrations (table definitions only, no data), which the server needs
+!app/migrations/*.sql
 *.dump
 # Local tools and caches (re-created automatically)
 .venv/
