@@ -1,0 +1,6 @@
+# Tools for tests, end-to-end browser tests and load tests (not needed to run the site).
+-r requirements.txt
+pytest==9.1.1
+playwright==1.63.0
+psutil==7.2.2
+httpx==0.28.1

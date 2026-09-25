@@ -1,0 +1,179 @@
+{
+  "hardware": {
+    "cpu": "Apple M2",
+    "cores": 8,
+    "performance_cores": 4,
+    "memory_gb": 8,
+    "macos": "15.1",
+    "python": "3.12.12"
+  },
+  "config": {
+    "sizes": [
+      2000
+    ],
+    "levels": [
+      25,
+      50
+    ],
+    "duration": 60,
+    "worker_threads": 2,
+    "search_concurrency": 2,
+    "search_queue": 64
+  },
+  "indexing": [
+    {
+      "photos": 2000,
+      "megabytes": 728,
+      "accepted": 2000,
+      "rejected": 0,
+      "http_errors": 0,
+      "upload_s": 14.6,
+      "until_searchable_s": 482.8,
+      "photos_per_s": 4.14,
+      "faces": 5003,
+      "failed": 0,
+      "server_processing_s": 942.18,
+      "avg_processing_ms_per_photo": 471,
+      "resources": {
+        "web": {
+          "cpu_avg_pct": 253,
+          "cpu_max_pct": 362,
+          "rss_max_mb": 830
+        },
+        "worker": {
+          "cpu_avg_pct": 229,
+          "cpu_max_pct": 325,
+          "rss_max_mb": 1005
+        },
+        "postgres": {
+          "cpu_avg_pct": 0,
+          "cpu_max_pct": 0,
+          "rss_max_mb": 117
+        },
+        "system": {
+          "available_min_gb": 1.08,
+          "swap_max_gb": 12.6
+        }
+      },
+      "searches_ran_during_indexing": true
+    }
+  ],
+  "search": [
+    {
+      "visitors": 25,
+      "duration_s": 61.8,
+      "requests": 684,
+      "ok": 684,
+      "errors": 0,
+      "error_rate_pct": 0.0,
+      "status_counts": {
+        "200": 684
+      },
+      "throughput_per_s": 11.1,
+      "latency_ms": {
+        "p50": 1871.0,
+        "p95": 4410.9,
+        "p99": 5420.6,
+        "mean": 2225.8,
+        "max": 6111.8
+      },
+      "server_ms_p50": 1865.5,
+      "match_ms_p50": 3.0,
+      "event_photos": 2000,
+      "resources": {
+        "web": {
+          "cpu_avg_pct": 287,
+          "cpu_max_pct": 392,
+          "rss_max_mb": 776
+        },
+        "worker": {
+          "cpu_avg_pct": 1,
+          "cpu_max_pct": 2,
+          "rss_max_mb": 19
+        },
+        "postgres": {
+          "cpu_avg_pct": 0,
+          "cpu_max_pct": 0,
+          "rss_max_mb": 108
+        },
+        "system": {
+          "available_min_gb": 1.07,
+          "swap_max_gb": 13.2
+        }
+      }
+    },
+    {
+      "visitors": 50,
+      "duration_s": 63.2,
+      "requests": 844,
+      "ok": 844,
+      "errors": 0,
+      "error_rate_pct": 0.0,
+      "status_counts": {
+        "200": 844
+      },
+      "throughput_per_s": 13.3,
+      "latency_ms": {
+        "p50": 3413.4,
+        "p95": 6852.0,
+        "p99": 7736.8,
+        "mean": 3650.7,
+        "max": 7933.1
+      },
+      "server_ms_p50": 3402.5,
+      "match_ms_p50": 2.0,
+      "event_photos": 2000,
+      "resources": {
+        "web": {
+          "cpu_avg_pct": 331,
+          "cpu_max_pct": 448,
+          "rss_max_mb": 869
+        },
+        "worker": {
+          "cpu_avg_pct": 0,
+          "cpu_max_pct": 1,
+          "rss_max_mb": 16
+        },
+        "postgres": {
+          "cpu_avg_pct": 0,
+          "cpu_max_pct": 0,
+          "rss_max_mb": 153
+        },
+        "system": {
+          "available_min_gb": 1.07,
+          "swap_max_gb": 13.3
+        }
+      }
+    }
+  ],
+  "search_during_indexing": {
+    "visitors": 10,
+    "duration_s": 483.3,
+    "requests": 4423,
+    "ok": 4423,
+    "errors": 0,
+    "error_rate_pct": 0.0,
+    "status_counts": {
+      "200": 4423
+    },
+    "throughput_per_s": 9.2,
+    "latency_ms": {
+      "p50": 1049.0,
+      "p95": 1517.7,
+      "p99": 2551.0,
+      "mean": 1091.9,
+      "max": 3575.0
+    },
+    "server_ms_p50": 1036.0,
+    "match_ms_p50": 6.0,
+    "event_photos": 2000
+  },
+  "run": {
+    "started": "2026-09-24 11:41:55",
+    "ended": "2026-09-24 11:52:14",
+    "total_minutes": 10.3,
+    "mac_slept_during_test": false,
+    "sleep_events": [],
+    "status_poll_retries": 0
+  }
+}

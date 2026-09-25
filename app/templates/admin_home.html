@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Мероприятия · Организатор{% endblock %}
+{% block nav %}
+<form method="post" action="/admin/logout"><button class="btn btn-ghost btn-small" type="submit">Выйти</button></form>
+{% endblock %}
+{% block content %}
+<p class="eyebrow">Организатор</p>
+<h1>Ваши мероприятия</h1>
+
+<section class="card">
+  <h2>Новое мероприятие</h2>
+  <form method="post" action="/admin/events" class="row">
+    <input name="name" type="text" maxlength="120" placeholder="Например: свадьба Анны и Тимура" required aria-label="Название мероприятия">
+    <button class="btn" type="submit">Создать</button>
+  </form>
+</section>
+
+{% if events %}
+<section class="event-list">
+  {% for e in events %}
+  <a class="card event-row" href="/admin/events/{{ e.id }}">
+    <div>
+      <strong>{{ e.name }}</strong>
+      <div class="muted small">Фотографий: {{ e.photo_count }} · найдено лиц: {{ e.face_count }} · создано {{ e.created_at.strftime('%d.%m.%Y') }}
+        · будет удалено {{ e.expires_at.strftime('%d.%m.%Y') }}</div>
+    </div>
+    {% if e.expired %}<span class="badge badge-warn">Срок истёк</span>
+    {% elif e.is_open %}<span class="badge badge-ok">Поиск включён</span>{% else %}<span class="badge">Поиск выключен</span>{% endif %}
+  </a>
+  {% endfor %}
+</section>
+{% else %}
+<p class="muted">Мероприятий пока нет. Создайте первое выше.</p>
+{% endif %}
+{% endblock %}

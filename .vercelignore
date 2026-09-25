@@ -1,0 +1,18 @@
+# Vercel only needs the public static files (see docs/deployment-plan.md). Everything private or
+# server-side stays off Vercel: photos, face data, database, backups, secrets, Python code.
+.env
+.env.*
+data/
+photos/
+photo 2/
+*.sql
+*.dump
+.venv/
+models/
+tests/
+test_data/
+sample_photos/
+scripts/
+app/*.py
+app/migrations/
+app/templates/

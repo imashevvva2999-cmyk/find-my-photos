@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ event.name }} · Организатор{% endblock %}
+{% block nav %}
+<a class="btn btn-ghost btn-small" href="/admin">Все мероприятия</a>
+{% endblock %}
+{% block content %}
+<div id="admin-event" data-event-id="{{ event.id }}" data-max-mb="{{ max_mb }}" data-max-files="{{ max_files }}"></div>
+
+<p class="eyebrow">Организатор · Мероприятие</p>
+<div class="page-head">
+  <h1>{{ event.name }}</h1>
+  {% if event.expired %}<span class="badge badge-warn">Срок истёк — скоро будет удалено</span>
+  {% elif event.is_open %}<span class="badge badge-ok">Поиск включён</span>{% else %}<span class="badge">Поиск выключен</span>{% endif %}
+</div>
+
+<section class="card">
+  <h2>Личная ссылка для гостей</h2>
+  <p class="muted small">Искать фотографии этого мероприятия могут только те, у кого есть эта ссылка. Делитесь ею только с гостями.</p>
+  <div class="row">
+    <input id="visitor-link" type="text" value="{{ visitor_link }}" readonly aria-label="Личная ссылка для гостей">
+    <button class="btn" type="button" id="copy-link">Копировать</button>
+    <a class="btn btn-ghost" href="{{ visitor_link }}" target="_blank" rel="noopener noreferrer">Открыть</a>
+  </div>
+  <div class="row actions">
+    <form method="post" action="/admin/events/{{ event.id }}/toggle">
+      <button class="btn btn-ghost btn-small" type="submit">{% if event.is_open %}Выключить поиск{% else %}Включить поиск{% endif %}</button>
+    </form>
+    <form method="post" action="/admin/events/{{ event.id }}/new-link"
+          data-confirm="Создать новую ссылку? Старая ссылка перестанет работать для всех.">
+      <button class="btn btn-ghost btn-small" type="submit">Создать новую ссылку</button>
+    </form>
+    <form method="post" action="/admin/events/{{ event.id }}/delete"
+          data-confirm="Удалить мероприятие, все его фотографии и все данные о лицах? Отменить это нельзя.">
+      <button class="btn btn-danger btn-small" type="submit">Удалить мероприятие</button>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Хранение данных</h2>
+  <p class="muted small">
+    Все фотографии и данные о лицах этого мероприятия будут автоматически удалены
+    <strong>{{ event.expires_at.strftime('%d.%m.%Y %H:%M') }} UTC</strong>.
+    Селфи гостей никогда не сохраняются, а ссылки на результаты быстро перестают действовать.
+  </p>
+  <form method="post" action="/admin/events/{{ event.id }}/expiry" class="row">
+    <label for="expiry-days" class="small">Хранить ещё</label>
+    <input id="expiry-days" name="days" type="number" min="1" max="{{ max_days }}" value="30" required class="input-narrow">
+    <span class="small">дней, начиная с сегодняшнего</span>
+    <button class="btn btn-ghost btn-small" type="submit">Установить дату удаления</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Загрузка фотографий</h2>
+  <label class="dropzone" id="dropzone" for="photo-input">
+    <input id="photo-input" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/*">
+    <strong>Перетащите фотографии сюда или нажмите, чтобы выбрать</strong>
+    <span class="muted small">{{ extensions }} · до {{ max_mb }} МБ каждая · можно выбрать сразу сотни</span>
+  </label>
+
+  <div id="upload-box" class="progress-box" hidden>
+    <div class="progress-label"><span>Загрузка</span><span id="upload-text"></span></div>
+    <div class="progress"><div class="progress-bar" id="upload-bar"></div></div>
+  </div>
+  <ul id="rejected" class="rejected" hidden></ul>
+</section>
+
+<section class="card">
+  <div class="progress-label"><h2>Обработка</h2><span id="process-text" class="muted small">Загрузка…</span></div>
+  <div class="progress"><div class="progress-bar progress-bar-green" id="process-bar"></div></div>
+  <div class="timing-grid">
+    <div><span class="muted small">Время загрузки (последняя загрузка)</span><strong id="t-upload">–</strong></div>
+    <div><span class="muted small">Загрузка + обработка — пока все фото не станут доступны для поиска</span><strong id="t-wall" class="timer-clock">–</strong></div>
+    <div><span class="muted small">Время поиска лиц на сервере (все фото)</span><strong id="t-process">–</strong></div>
+  </div>
+  <p class="muted small">Каждая фотография проверяется на наличие лиц в фоновом режиме. Гости могут искать в любое время;
+    фото участвует в поиске, как только у него появится зелёная галочка.</p>
+  <p id="failed-box" class="alert alert-error small" hidden>
+    <span id="failed-text"></span>
+    <button class="btn btn-ghost btn-small" type="button" id="retry-failed">Повторить обработку</button>
+  </p>
+  <div id="photo-grid" class="grid"></div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ asset('admin.js') }}"></script>{% endblock %}

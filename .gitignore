@@ -1,0 +1,21 @@
+# Private: never commit these. Photos, face data, database files and backups, passwords.
+.env
+.env.*
+data/
+photos/
+photo 2/
+*.sql
+*.dump
+# Local tools and caches (re-created automatically)
+.venv/
+models/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.playwright-mcp/
+.DS_Store
+# Generated load-test photos and results data
+test_data/load/set_*/
+
+# Demo pictures of public figures used by one local test (copyright unclear): keep out of git
+sample_photos/

@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}{{ event.name }} · Мои фото{% endblock %}
+{% block body_class %}page page-visitor{% if event.is_open %} has-library{% endif %}{% endblock %}
+{% block nav %}
+{% if event.is_open %}
+<button class="menu-btn desktop-only" id="menu-btn" type="button" aria-expanded="false" aria-controls="menu" aria-label="Открыть меню">
+  <span class="menu-label">Меню</span><span class="bars" aria-hidden="true"><i></i><i></i></span>
+</button>
+{% endif %}
+{% endblock %}
+{% block content %}
+<div id="visitor" data-token="{{ event.token }}" data-max-mb="{{ max_mb }}"></div>
+
+<section class="hero{% if event.is_open %} hero-library{% endif %}">
+  <p class="eyebrow">Найдите свои фото</p>
+  <h1 id="event-title" class="headline">{{ event.name }}</h1>
+  <p class="muted mobile-only">Сделайте селфи или загрузите одно чёткое фото своего лица — и мы покажем фотографии мероприятия, на которых вы можете быть, в том числе групповые.</p>
+  {% if event.is_open %}
+  <p class="muted desktop-only hero-sub">Чтобы найти фотографии, на которых есть вы, нажмите кнопку с камерой в правом нижнем углу.</p>
+  {% endif %}
+</section>
+
+{% if not event.is_open %}
+<section class="card"><p class="alert">Поиск фотографий для этого мероприятия сейчас выключен. Загляните позже.</p></section>
+{% else %}
+<!-- Desktop: the whole event as a photo library (phones don't load it yet). -->
+<section id="gallery" class="desktop-only gallery-view" aria-labelledby="gallery-title">
+  <div class="library-bar">
+    <div class="library-title">
+      <h2 id="gallery-title" tabindex="-1">Все фотографии</h2>
+      <span class="library-count" id="gallery-count" hidden></span>
+    </div>
+    <div class="library-tools">
+      <div class="seg" role="group" aria-label="Вид">
+        <button type="button" class="seg-btn" id="view-grid" aria-pressed="true">Сетка</button>
+        <button type="button" class="seg-btn" id="view-sphere" aria-pressed="false">Сфера</button>
+      </div>
+      <div class="zoom" id="zoom" role="group" aria-label="Размер миниатюр">
+        <button type="button" class="zoom-btn" id="zoom-out" aria-label="Миниатюры меньше" title="Миниатюры меньше">−</button>
+        <button type="button" class="zoom-btn" id="zoom-in" aria-label="Миниатюры больше" title="Миниатюры больше">+</button>
+      </div>
+    </div>
+  </div>
+  <p class="sr-only" id="grid-help">Стрелками можно переходить между фотографиями, Enter — открыть фото.</p>
+  <div id="gallery-grid" class="library-grid" aria-describedby="grid-help"></div>
+
+  <div id="sphere" class="sphere" hidden>
+    <div id="stage" class="stage" tabindex="0" role="application" aria-roledescription="фотосфера"
+         aria-label="Фотосфера. Поворачивайте её мышью или стрелками. Enter откроет фото на переднем плане.">
+      <div id="world">
+        <div id="orb"></div>
+        <p id="sphere-title" class="sphere-title" aria-hidden="true"><span class="inner">{{ event.name }}</span></p>
+      </div>
+      <div class="vig" aria-hidden="true"></div>
+      <p class="cue" aria-hidden="true"><s></s>Потяните, чтобы повернуть</p>
+    </div>
+  </div>
+  <p class="muted small gallery-status" id="gallery-status" role="status"></p>
+</section>
+
+<!-- Phones: shown on the page. Desktop: a small panel that opens from the camera button. -->
+<section class="card search-card" id="search-card" aria-labelledby="composer-title">
+  <div class="composer-head desktop-only">
+    <h2 id="composer-title">Найти мои фото</h2>
+    <button type="button" class="composer-close" id="composer-close" aria-label="Закрыть" title="Закрыть">✕</button>
+  </div>
+  <form id="search-form" class="stack">
+    <div class="source-tabs" role="tablist" aria-label="Как передать фото">
+      <button type="button" role="tab" class="source-tab" id="tab-camera" aria-controls="camera-panel" aria-selected="false">
+        <span class="source-icon" aria-hidden="true">📷</span> Сделать фото
+        <span class="source-hint">камерой устройства</span>
+      </button>
+      <button type="button" role="tab" class="source-tab" id="tab-upload" aria-controls="upload-panel" aria-selected="true">
+        <span class="source-icon" aria-hidden="true">🖼️</span> Загрузить фото
+        <span class="source-hint">с вашего устройства</span>
+      </button>
+    </div>
+
+    <div id="camera-panel" role="tabpanel" aria-labelledby="tab-camera" class="camera-panel" hidden>
+      <div class="camera-frame" id="camera-frame">
+        <video id="camera-video" autoplay playsinline muted hidden></video>
+        <img id="camera-shot" alt="Ваше селфи" hidden>
+        <div class="camera-placeholder" id="camera-placeholder">
+          <strong>Сделайте селфи</strong>
+          <span class="muted small">Браузер попросит разрешение на использование камеры.</span>
+        </div>
+      </div>
+      <div class="camera-actions">
+        <button type="button" class="btn" id="camera-start">Включить камеру</button>
+        <button type="button" class="btn" id="camera-snap" hidden>Сделать снимок</button>
+        <button type="button" class="btn btn-ghost" id="camera-retake" hidden>Переснять</button>
+      </div>
+      <p class="muted small camera-note" id="camera-note">Только вы, лицом к камере, при хорошем освещении. Снимок остаётся на этой странице, пока вы не нажмёте «Найти мои фото».</p>
+      <p class="alert alert-error" id="camera-error" role="alert" hidden></p>
+    </div>
+
+    <div id="upload-panel" role="tabpanel" aria-labelledby="tab-upload">
+      <label class="dropzone dropzone-selfie" for="selfie-input" id="selfie-drop">
+        <input id="selfie-input" type="file" accept="image/*,.heic,.heif">
+        <img id="selfie-preview" alt="Выбранное вами фото" hidden>
+        <span id="selfie-hint">
+          <strong>Выберите фото своего лица</strong>
+          <span class="muted small">Только вы, лицом к камере, хорошее освещение · до {{ max_mb }} МБ</span>
+        </span>
+      </label>
+      <div class="camera-actions desktop-only">
+        <button type="button" class="btn btn-ghost" id="upload-replace" hidden>Заменить фото</button>
+      </div>
+    </div>
+
+    <div class="privacy">
+      <strong>Конфиденциальность</strong>
+      <ul>
+        <li>Ваше фото используется только для этого поиска и сразу удаляется. Оно нигде не сохраняется.</li>
+        <li>Фотографии мероприятия может посмотреть любой, у кого есть ссылка на него. Ссылки на фото перестают действовать через {{ link_minutes }} минут.</li>
+        <li>Фотографии и данные о лицах этого мероприятия будут удалены {{ event.expires_at.strftime('%d.%m.%Y') }}.</li>
+      </ul>
+      <label class="check"><input type="checkbox" id="consent"> Даю согласие на использование моего фото для этого поиска по лицу.</label>
+    </div>
+
+    <button class="btn btn-big" type="submit" id="search-btn" disabled>Найти мои фото</button>
+  </form>
+  <div class="timer" id="search-timer" hidden aria-live="off">
+    <span class="timer-label" id="timer-label">Ищем…</span>
+    <span class="timer-clock" id="timer-clock">0,00 с</span>
+  </div>
+  <p class="muted small timer-detail" id="timer-detail"></p>
+  <div id="message" role="status" aria-live="polite"></div>
+</section>
+
+<section id="results" hidden>
+  <div class="page-head results-head">
+    <button type="button" class="btn btn-ghost desktop-only" id="results-back">← Ко всем фотографиям</button>
+    <h2 id="results-title" tabindex="-1"></h2>
+    <span class="badge desktop-only" id="results-time"></span>
+  </div>
+  <p class="muted small desktop-only results-timing" id="results-timing"></p>
+  <p class="alert alert-info small">Это <strong>возможные совпадения</strong>, найденные автоматическим распознаванием лиц, — оно может ошибаться. На некоторых фото может быть похожий на вас человек, а часть ваших фото может не найтись.</p>
+  <div id="result-grid" class="grid grid-results"></div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block overlays %}
+{% if event.is_open %}
+<div id="splash" class="splash desktop-only" aria-hidden="true">
+  <span class="splash-mark">Мои<em>фото</em></span>
+  <span class="splash-bar"><s id="splash-bar"></s></span>
+  <span class="splash-tag">{{ event.name }}</span>
+</div>
+
+<div id="menu" class="menu desktop-only" inert>
+  <nav aria-label="Меню">
+    <button type="button" class="menu-link" data-action="grid">Все фотографии</button>
+    <button type="button" class="menu-link" data-action="sphere">Фотосфера</button>
+    <button type="button" class="menu-link" data-action="find">Найти мои фото</button>
+  </nav>
+  <p class="menu-addr">{{ event.name }} · личная ссылка на мероприятие<br>Фотографии и данные о лицах будут удалены {{ event.expires_at.strftime('%d.%m.%Y') }}. Ваше селфи никогда не сохраняется.</p>
+</div>
+
+<!-- Desktop only (hidden on phones and tablets by the stylesheet): floating camera button -->
+<div class="photo-fab-wrap" id="photo-fab-wrap">
+  <div class="photo-menu" id="photo-menu" role="menu" aria-labelledby="photo-fab" hidden>
+    <button type="button" role="menuitem" class="photo-menu-item" id="menu-camera" tabindex="-1">
+      <svg class="photo-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      <span><strong>Сделать фото</strong><span class="photo-menu-hint">веб-камерой</span></span>
+    </button>
+    <button type="button" role="menuitem" class="photo-menu-item" id="menu-upload" tabindex="-1">
+      <svg class="photo-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15v5h16v-5"/></svg>
+      <span><strong>Загрузить фото</strong><span class="photo-menu-hint">выбрать файл изображения</span></span>
+    </button>
+  </div>
+  <button type="button" class="photo-fab" id="photo-fab" aria-haspopup="menu" aria-expanded="false"
+          aria-controls="photo-menu" aria-label="Найти мои фото: сделать или загрузить фото" title="Найти мои фото">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+    <span class="photo-fab-plus" aria-hidden="true">+</span>
+  </button>
+</div>
+
+<dialog id="viewer" class="viewer" aria-labelledby="viewer-title">
+  <div class="lit" id="viewer-lit">
+    <div class="plate" id="viewer-plate">
+      <div class="shot">
+        <img id="viewer-img" alt="">
+        <button class="shot-close" type="button" id="viewer-close">Закрыть</button>
+      </div>
+      <div class="meta">
+        <div>
+          <h2 id="viewer-title" class="lit-title"></h2>
+          <p class="where" id="viewer-count"></p>
+        </div>
+        <div>
+          <p class="note" id="viewer-note"></p>
+          <div class="lit-actions">
+            <span class="badge badge-warn" id="viewer-badge">Возможное совпадение</span>
+            <a id="viewer-download" class="btn btn-small" download>Скачать</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="viewer-nav viewer-prev" id="viewer-prev" aria-label="Предыдущее фото">‹</button>
+    <button type="button" class="viewer-nav viewer-next" id="viewer-next" aria-label="Следующее фото">›</button>
+  </div>
+</dialog>
+
+<div id="dot" class="dot" aria-hidden="true"></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ asset('event.js') }}"></script>{% endblock %}
