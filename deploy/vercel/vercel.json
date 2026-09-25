@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    { "source": "/admin", "destination": "https://findmyphotos-backend.onrender.com/admin", "permanent": false },
+    { "source": "/admin/:path*", "destination": "https://findmyphotos-backend.onrender.com/admin/:path*", "permanent": false }
+  ],
+  "rewrites": [
+    { "source": "/:path*", "destination": "https://findmyphotos-backend.onrender.com/:path*" }
+  ],
+  "headers": [
+    { "source": "/:path*", "headers": [{ "key": "x-vercel-enable-rewrite-caching", "value": "0" }] }
+  ]
+}
