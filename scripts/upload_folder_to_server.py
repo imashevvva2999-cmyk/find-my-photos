@@ -24,7 +24,7 @@ EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--server", required=True)
-    parser.add_argument("--password-file", required=True, type=Path)
+    parser.add_argument("--password-file", type=Path, help="only if the server still has a sign-in")
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--event-name")
     target.add_argument("--event-id", type=int)
@@ -37,9 +37,10 @@ def main() -> None:
         raise SystemExit(f"No photos in {args.folder}")
     client = httpx.Client(base_url=server, headers={"Origin": server}, timeout=httpx.Timeout(120, connect=20))
 
-    r = client.post("/admin/login", data={"password": args.password_file.read_text().strip()})
-    if r.status_code != 303:
-        raise SystemExit(f"Login failed (HTTP {r.status_code}). Check ADMIN_PASSWORD_HASH on the server.")
+    if args.password_file:
+        r = client.post("/admin/login", data={"password": args.password_file.read_text().strip()})
+        if r.status_code != 303:
+            raise SystemExit(f"Login failed (HTTP {r.status_code}). Check ADMIN_PASSWORD_HASH on the server.")
 
     if args.event_id:
         event_id = args.event_id

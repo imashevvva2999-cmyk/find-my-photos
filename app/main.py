@@ -147,6 +147,12 @@ async def database_unavailable(request: Request, _exc: db.DatabaseUnavailable):
 
 @app.get("/")
 def home(request: Request):
+    """Public site: the home page opens the photo page (all photos + find yourself by selfie)."""
+    with db.connect() as conn:
+        event = conn.execute("""SELECT token FROM events WHERE is_open AND expires_at > now()
+                                ORDER BY id DESC LIMIT 1""").fetchone()
+    if event:
+        return RedirectResponse(f"/e/{event['token']}", status_code=303)
     return templates.TemplateResponse(request, "home.html")
 
 
