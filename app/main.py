@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import logging
 import secrets
+import tarfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -28,7 +29,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import db, faces, images, maintenance, matching, migrate, security, storage, uploads, worker
+from . import db, faces, images, importer, maintenance, matching, migrate, passkeys, security, storage, uploads, worker
 from .config import ALLOWED_EXTENSIONS, settings
 from .observability import EdgeMiddleware, setup_logging
 
@@ -154,6 +155,33 @@ def robots():
     return "User-agent: *\nDisallow: /\n"
 
 
+# --------------------------------------------------------------------------- photo-file import
+# Off (404) unless IMPORT_TOKEN_SHA256 is set; see app/importer.py.
+
+@app.post(importer.PATH)
+async def import_files(request: Request):
+    if not importer.authorised(request.headers.get("authorization", "")):
+        raise HTTPException(404)
+    archive = storage.new_incoming_path()
+    try:
+        with open(archive, "wb") as out:
+            async for chunk in request.stream():
+                out.write(chunk)
+        result = await run_in_threadpool(importer.extract, archive)
+    except tarfile.TarError:
+        return JSONResponse({"error": "bad_archive"}, status_code=400)
+    finally:
+        archive.unlink(missing_ok=True)
+    return result
+
+
+@app.get(importer.PATH)
+def import_inventory(request: Request, event: int):
+    if not importer.authorised(request.headers.get("authorization", "")):
+        raise HTTPException(404)
+    return importer.inventory(event)
+
+
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
@@ -186,8 +214,6 @@ def readyz():
 
 @app.get("/admin/login")
 def login_page(request: Request):
-    if settings.admin_open:
-        return RedirectResponse("/admin", status_code=303)
     return templates.TemplateResponse(request, "login.html")
 
 
@@ -202,6 +228,42 @@ def login(request: Request, password: str = Form("")):
         log.info("admin logged in")
         return RedirectResponse("/admin", status_code=303)
     return templates.TemplateResponse(request, "login.html", {"error": "Неверный пароль."}, status_code=401)
+
+
+def _passkey_error(message: str, status: int = 400) -> JSONResponse:
+    return JSONResponse({"error": "passkey", "message": message}, status_code=status)
+
+
+async def _json_body(request: Request) -> dict:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Неверный запрос.")
+    return body
+
+
+@app.post("/admin/passkey/login/options")
+def passkey_login_options(request: Request):
+    return PlainTextResponse(passkeys.authentication_options(request), media_type="application/json")
+
+
+@app.post("/admin/passkey/login/verify")
+async def passkey_login_verify(request: Request):
+    """Sign in with a passkey. Failed attempts count towards the same limit as wrong passwords."""
+    body = await _json_body(request)
+    ip_key = "login:" + security._hash_key(security.client_ip(request))
+    if not await run_in_threadpool(security.RateLimiter.hit, ip_key, settings.login_failures_per_15_min, security.LOGIN_WINDOW):
+        return _passkey_error("Слишком много неудачных попыток. Подождите 15 минут и попробуйте снова.", 429)
+    try:
+        await run_in_threadpool(passkeys.authenticate, request, body)
+    except passkeys.PasskeyError as exc:
+        return _passkey_error(str(exc), 401)
+    await run_in_threadpool(security.RateLimiter.undo, ip_key, security.LOGIN_WINDOW)
+    security.start_session(request.session)
+    log.info("admin logged in with a passkey")
+    return {"ok": True, "next": "/admin"}
 
 
 @app.post("/admin/logout")
@@ -230,7 +292,29 @@ def admin_home(request: Request):
                    COUNT(p.id) AS photo_count, COALESCE(SUM(p.face_count), 0) AS face_count
             FROM events e LEFT JOIN photos p ON p.event_id = e.id
             GROUP BY e.id ORDER BY e.id DESC""").fetchall()
-    return templates.TemplateResponse(request, "admin_home.html", {"events": events})
+    return templates.TemplateResponse(request, "admin_home.html",
+                                      {"events": events, "passkeys": passkeys.list_passkeys()})
+
+
+@app.post("/admin/api/passkeys/options")
+def passkey_register_options(request: Request):
+    return PlainTextResponse(passkeys.registration_options(request), media_type="application/json")
+
+
+@app.post("/admin/api/passkeys")
+async def passkey_register(request: Request):
+    body = await _json_body(request)
+    try:
+        await run_in_threadpool(passkeys.register, request, body.get("credential"), str(body.get("name", "")))
+    except passkeys.PasskeyError as exc:
+        return _passkey_error(str(exc))
+    return {"ok": True}
+
+
+@app.post("/admin/passkeys/{passkey_id}/delete")
+def passkey_delete(passkey_id: int):
+    passkeys.delete(passkey_id)
+    return RedirectResponse("/admin", status_code=303)
 
 
 @app.post("/admin/events")

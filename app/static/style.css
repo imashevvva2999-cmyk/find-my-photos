@@ -185,6 +185,16 @@ input[type=text]:hover, input[type=password]:hover, input[type=number]:hover { b
 .tile-actions { display: flex; gap: 6px; }
 .tile-actions .btn { flex: 1; }
 
+/* organiser sign-in: passkey first, password as a fallback */
+.password-login { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+.password-login summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+.password-login summary:hover { color: var(--text); }
+.password-login form { margin-top: 12px; }
+.passkey-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.passkey-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); }
+.passkey-list li > span { display: flex; flex-direction: column; }
+#passkey-status { margin-top: 12px; }
+
 /* timers (admin + visitor) */
 .timer {
   display: flex; justify-content: space-between; align-items: baseline; gap: 12px;

@@ -85,7 +85,7 @@ def app():
 def clean_state(app):
     """Every test starts with an empty database, an empty data folder and empty caches."""
     with db.connect() as conn:
-        conn.execute("TRUNCATE events, photos, faces, rate_limits, search_log, worker_heartbeats, admin_state "
+        conn.execute("TRUNCATE events, photos, faces, rate_limits, search_log, worker_heartbeats, admin_state, admin_passkeys, passkey_challenges "
                      "RESTART IDENTITY CASCADE")
     security._valid_after["checked"] = 0.0
     for path in sorted(DATA_DIR.rglob("*"), reverse=True):

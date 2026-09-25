@@ -94,8 +94,9 @@ def event_link(server, playwright):
     browser = playwright.chromium.launch()
     page = browser.new_page(bypass_csp=True)
     page.goto(f"{server}/admin/login")
+    page.click(".password-login summary")                  # the password is the fallback under the passkey button
     page.fill("#password", ADMIN_PASSWORD)
-    page.click("button[type=submit]")
+    page.click(".password-login button[type=submit]")
     page.fill("input[name=name]", "E2E event")
     page.press("input[name=name]", "Enter")
     page.wait_for_url(re.compile(r"/admin/events/\d+"))
@@ -483,8 +484,9 @@ def _page_colours(page):
 def _all_pages(page, server, event_link):
     """Admin list, event detail, visitor page and login page, with an admin session."""
     page.goto(f"{server}/admin/login")
+    page.click(".password-login summary")                  # the password is the fallback under the passkey button
     page.fill("#password", ADMIN_PASSWORD)
-    page.click("button[type=submit]")
+    page.click(".password-login button[type=submit]")
     page.wait_for_url(f"{server}/admin")
     detail = server + page.locator("a.event-row").first.get_attribute("href")
     return {"admin list": f"{server}/admin", "event detail": detail, "visitor": event_link,
@@ -531,4 +533,36 @@ def test_iphone_safari_upload_flow(playwright, event_link):
         pytest.skip(f"WebKit not available: {exc}")
     context = browser.new_context(**playwright.devices["iPhone 13"], bypass_csp=True)
     upload_flow(context.new_page(), event_link)
+    browser.close()
+
+
+def test_organiser_passkey_sign_in_in_a_real_browser(playwright, server, event_link):
+    """Chromium's virtual authenticator stands in for Touch ID / Windows Hello: add a passkey in
+    the organiser area, sign out, then sign in again without typing anything."""
+    browser = playwright.chromium.launch()
+    page = browser.new_page(bypass_csp=True)
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("WebAuthn.enable")
+    cdp.send("WebAuthn.addVirtualAuthenticator", {"options": {
+        "protocol": "ctap2", "transport": "internal", "hasResidentKey": True,
+        "hasUserVerification": True, "isUserVerified": True}})
+    server = server.replace("127.0.0.1", "localhost")      # browsers refuse passkeys for bare IP addresses
+    page.goto(f"{server}/admin")
+    expect(page).to_have_url(f"{server}/admin/login")      # closed without signing in
+    page.click(".password-login summary")                  # password is the fallback
+    page.fill("#password", ADMIN_PASSWORD)
+    page.click(".password-login button[type=submit]")
+    page.wait_for_url(f"{server}/admin")
+    page.fill("#passkey-name", "E2E browser")
+    page.click("#passkey-add")
+    page.wait_for_selector(".passkey-list, #passkey-status.alert-error", timeout=10_000)
+    assert page.locator(".passkey-list").count(), page.inner_text("#passkey-status")
+    expect(page.locator(".passkey-list")).to_contain_text("E2E browser")
+    page.click("text=Выйти")
+    page.wait_for_url(f"{server}/admin/login")
+    page.goto(f"{server}/admin")
+    expect(page).to_have_url(f"{server}/admin/login")
+    page.click("#passkey-login")                           # no password typed
+    page.wait_for_url(f"{server}/admin")
+    expect(page.locator("h1")).to_have_text("Ваши мероприятия")
     browser.close()

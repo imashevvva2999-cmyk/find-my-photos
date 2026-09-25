@@ -6,6 +6,7 @@ program with a message that names the variable, instead of failing later at rand
 import hashlib
 import hmac
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,7 +49,7 @@ class Settings:
     db_pool_max: int
     log_level: str
     public_base_url: str            # address guests use (e.g. the Vercel domain); "" = this server's address
-    admin_open: bool = False        # ADMIN_OPEN=true: the organiser area needs no password (anyone can manage events)
+    import_token_sha256: str = ""  # IMPORT_TOKEN_SHA256: turns the photo-file import on (only during a transfer)
 
     def derived_key(self, purpose: str) -> str:
         """Separate keys for sessions and result links, derived from SECRET_KEY."""
@@ -129,8 +130,10 @@ def load_settings(env=None) -> Settings:
         db_pool_max=_get_int(env, "DB_POOL_MAX", 20, 2, 200, problems),
         log_level=env.get("LOG_LEVEL", "INFO").upper(),
         public_base_url=env.get("PUBLIC_BASE_URL", "").strip().rstrip("/"),
-        admin_open=_get_bool(env, "ADMIN_OPEN", False, problems),
+        import_token_sha256=env.get("IMPORT_TOKEN_SHA256", "").strip().lower(),
     )
+    if s.import_token_sha256 and not re.fullmatch(r"[0-9a-f]{64}", s.import_token_sha256):
+        problems.append("IMPORT_TOKEN_SHA256 must be a SHA-256 hex digest (64 characters)")
     if s.public_base_url and not s.public_base_url.startswith(("https://", "http://")):
         problems.append(f"PUBLIC_BASE_URL must start with https:// (got {s.public_base_url!r})")
     if s.strong_match < s.match_threshold:

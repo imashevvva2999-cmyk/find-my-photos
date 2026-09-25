@@ -6,10 +6,19 @@
   <h1>Вход для организатора</h1>
   <p class="muted">Создавать мероприятия и загружать фотографии может только организатор.</p>
   {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
-  <form method="post" action="/admin/login" class="stack">
-    <label for="password">Пароль</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
-    <button class="btn" type="submit">Войти</button>
-  </form>
+  <div class="stack">
+    <button class="btn btn-big" type="button" id="passkey-login">Войти с ключом доступа</button>
+    <p class="muted small center">Face ID, Touch ID, Windows Hello или ключ безопасности — без пароля.</p>
+    <p class="alert alert-error" id="passkey-error" role="alert" hidden></p>
+  </div>
+  <details class="password-login"{% if error %} open{% endif %}>
+    <summary>Войти по паролю</summary>
+    <form method="post" action="/admin/login" class="stack">
+      <label for="password">Пароль</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button class="btn btn-ghost" type="submit">Войти</button>
+    </form>
+  </details>
 </section>
 {% endblock %}
+{% block scripts %}<script src="{{ asset('passkey.js') }}"></script>{% endblock %}

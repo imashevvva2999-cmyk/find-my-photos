@@ -25,7 +25,8 @@ from .passwords import password_version, verify_password
 log = logging.getLogger("security")
 
 SESSION_MAX_AGE = 12 * 3600
-PUBLIC_ADMIN_PATHS = {"/admin/login"}
+# The sign-in pages themselves (password and passkey) are the only admin paths open without a session.
+PUBLIC_ADMIN_PATHS = {"/admin/login", "/admin/passkey/login/options", "/admin/passkey/login/verify"}
 
 
 def check_password(password: str) -> bool:
@@ -175,8 +176,7 @@ async def admin_guard(request, call_next) -> Response:
         if request.method not in ("GET", "HEAD", "OPTIONS") and not _same_origin(request):
             log.warning("admin request refused: cross-site origin")
             return JSONResponse({"error": "forbidden", "message": "Запрос отклонён (с другого сайта)."}, status_code=403)
-        if (not settings.admin_open and path not in PUBLIC_ADMIN_PATHS
-                and not await run_in_threadpool(is_admin, dict(request.session))):
+        if path not in PUBLIC_ADMIN_PATHS and not await run_in_threadpool(is_admin, dict(request.session)):
             if path.startswith("/admin/api/") or request.method != "GET":
                 return JSONResponse({"error": "login_required", "message": "Пожалуйста, войдите снова."}, status_code=401)
             return RedirectResponse("/admin/login", status_code=303)

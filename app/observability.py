@@ -41,6 +41,8 @@ def body_limit_for(path: str) -> int:
         return settings.max_files_per_request * settings.max_upload_mb * 1024 * 1024 + (1 << 20)
     if _SEARCH_PATH.match(path):
         return settings.max_selfie_mb * 1024 * 1024 + 1024
+    if path == "/internal/import-files":  # tar archives of photo files (off unless IMPORT_TOKEN_SHA256 is set)
+        return 2 * 1024 ** 3
     return 64 * 1024
 
 
