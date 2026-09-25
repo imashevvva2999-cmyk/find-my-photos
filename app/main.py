@@ -214,7 +214,7 @@ def readyz():
 
 @app.get("/admin/login")
 def login_page(request: Request):
-    return templates.TemplateResponse(request, "login.html")
+    return RedirectResponse("/admin", status_code=303)  # no sign-in: the organiser area is open
 
 
 @app.post("/admin/login")

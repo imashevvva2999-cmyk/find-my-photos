@@ -16,7 +16,7 @@ import time
 from urllib.parse import urlsplit
 
 from starlette.concurrency import run_in_threadpool
-from starlette.responses import JSONResponse, RedirectResponse, Response
+from starlette.responses import JSONResponse, Response
 
 from . import db
 from .config import settings
@@ -170,14 +170,11 @@ def _same_origin(request) -> bool:
 
 
 async def admin_guard(request, call_next) -> Response:
-    """Middleware: protects /admin/* before the request body is touched."""
+    """Middleware: refuses cross-site POSTs to /admin/* before the request body is touched."""
     path = request.url.path
     if path.startswith("/admin"):
         if request.method not in ("GET", "HEAD", "OPTIONS") and not _same_origin(request):
             log.warning("admin request refused: cross-site origin")
             return JSONResponse({"error": "forbidden", "message": "Запрос отклонён (с другого сайта)."}, status_code=403)
-        if path not in PUBLIC_ADMIN_PATHS and not await run_in_threadpool(is_admin, dict(request.session)):
-            if path.startswith("/admin/api/") or request.method != "GET":
-                return JSONResponse({"error": "login_required", "message": "Пожалуйста, войдите снова."}, status_code=401)
-            return RedirectResponse("/admin/login", status_code=303)
+        # No sign-in: the organiser area is open to everyone (public site by the owner's choice).
     return await call_next(request)

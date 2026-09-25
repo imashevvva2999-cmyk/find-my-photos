@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Мероприятия · Организатор{% endblock %}
 {% block nav %}
-<form method="post" action="/admin/logout"><button class="btn btn-ghost btn-small" type="submit">Выйти</button></form>
 {% endblock %}
 {% block content %}
 <p class="eyebrow">Организатор</p>
@@ -15,30 +14,6 @@
   </form>
 </section>
 
-<section class="card passkey-card" aria-labelledby="passkey-title">
-  <h2 id="passkey-title">Вход без пароля</h2>
-  {% if passkeys %}
-  <p class="muted small">Входите с ключом доступа (Face ID, Touch ID, Windows Hello или ключ безопасности). Пароль остаётся запасным способом.</p>
-  <ul class="passkey-list">
-    {% for k in passkeys %}
-    <li>
-      <span><strong>{{ k.name }}</strong>
-        <span class="muted small">добавлен {{ k.created_at.strftime('%d.%m.%Y') }}{% if k.last_used_at %} · последний вход {{ k.last_used_at.strftime('%d.%m.%Y') }}{% endif %}</span></span>
-      <form method="post" action="/admin/passkeys/{{ k.id }}/delete">
-        <button class="btn btn-ghost btn-small" type="submit" aria-label="Удалить ключ «{{ k.name }}»">Удалить</button>
-      </form>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="muted small">Добавьте ключ доступа на этом устройстве — и в следующий раз входите по Face ID, Touch ID или Windows Hello, без пароля.</p>
-  {% endif %}
-  <div class="row">
-    <input id="passkey-name" type="text" maxlength="60" placeholder="Название, например: MacBook" aria-label="Название ключа доступа">
-    <button class="btn" type="button" id="passkey-add">Добавить ключ доступа</button>
-  </div>
-  <p class="alert small" id="passkey-status" role="status" hidden></p>
-</section>
 
 {% if events %}
 <section class="event-list">
@@ -58,4 +33,3 @@
 <p class="muted">Мероприятий пока нет. Создайте первое выше.</p>
 {% endif %}
 {% endblock %}
-{% block scripts %}<script src="{{ asset('passkey.js') }}"></script>{% endblock %}

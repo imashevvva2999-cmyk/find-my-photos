@@ -101,7 +101,7 @@ def load_settings(env=None) -> Settings:
     if len(secret_key) < 32:
         problems.append("SECRET_KEY is missing or shorter than 32 characters")
     password_hash = env.get("ADMIN_PASSWORD_HASH", "")
-    if not password_hash.startswith("scrypt$"):
+    if password_hash and not password_hash.startswith("scrypt$"):  # optional: the site has no sign-in
         problems.append("ADMIN_PASSWORD_HASH is missing - run: .venv/bin/python scripts/set_admin_password.py")
 
     s = Settings(
