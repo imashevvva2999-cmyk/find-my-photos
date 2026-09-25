@@ -19,3 +19,6 @@ test_data/load/set_*/
 
 # Demo pictures of public figures used by one local test (copyright unclear): keep out of git
 sample_photos/
+
+# Downloaded helper programs
+tools/
