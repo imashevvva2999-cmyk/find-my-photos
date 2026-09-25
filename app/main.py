@@ -186,6 +186,8 @@ def readyz():
 
 @app.get("/admin/login")
 def login_page(request: Request):
+    if settings.admin_open:
+        return RedirectResponse("/admin", status_code=303)
     return templates.TemplateResponse(request, "login.html")
 
 

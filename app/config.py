@@ -48,6 +48,7 @@ class Settings:
     db_pool_max: int
     log_level: str
     public_base_url: str            # address guests use (e.g. the Vercel domain); "" = this server's address
+    admin_open: bool = False        # ADMIN_OPEN=true: the organiser area needs no password (anyone can manage events)
 
     def derived_key(self, purpose: str) -> str:
         """Separate keys for sessions and result links, derived from SECRET_KEY."""
@@ -128,6 +129,7 @@ def load_settings(env=None) -> Settings:
         db_pool_max=_get_int(env, "DB_POOL_MAX", 20, 2, 200, problems),
         log_level=env.get("LOG_LEVEL", "INFO").upper(),
         public_base_url=env.get("PUBLIC_BASE_URL", "").strip().rstrip("/"),
+        admin_open=_get_bool(env, "ADMIN_OPEN", False, problems),
     )
     if s.public_base_url and not s.public_base_url.startswith(("https://", "http://")):
         problems.append(f"PUBLIC_BASE_URL must start with https:// (got {s.public_base_url!r})")

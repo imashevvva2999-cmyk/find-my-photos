@@ -5,6 +5,7 @@
     { "source": "/admin/:path*", "destination": "https://findmyphotos-backend.onrender.com/admin/:path*", "permanent": false }
   ],
   "rewrites": [
+    { "source": "/", "destination": "https://findmyphotos-backend.onrender.com/" },
     { "source": "/:path*", "destination": "https://findmyphotos-backend.onrender.com/:path*" }
   ],
   "headers": [
