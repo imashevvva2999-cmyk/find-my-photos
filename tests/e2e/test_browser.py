@@ -20,7 +20,7 @@ import psycopg
 import pytest
 from PIL import Image
 
-from conftest import ADMIN_PASSWORD, NASA, ROOT, SEARCH, SUPER_URL, TEST_URL, _user
+from conftest import NASA, ROOT, SEARCH, SUPER_URL, TEST_URL, _user
 
 pw = pytest.importorskip("playwright.sync_api")
 expect = pw.expect
@@ -90,13 +90,10 @@ def playwright():
 
 @pytest.fixture(scope="module")
 def event_link(server, playwright):
-    """Organiser flow in the browser: log in, create an event, upload photos, wait."""
+    """Organiser flow in the browser (no sign-in): create an event, upload photos, wait."""
     browser = playwright.chromium.launch()
     page = browser.new_page(bypass_csp=True)
-    page.goto(f"{server}/admin/login")
-    page.click(".password-login summary")                  # the password is the fallback under the passkey button
-    page.fill("#password", ADMIN_PASSWORD)
-    page.click(".password-login button[type=submit]")
+    page.goto(f"{server}/admin")
     page.fill("input[name=name]", "E2E event")
     page.press("input[name=name]", "Enter")
     page.wait_for_url(re.compile(r"/admin/events/\d+"))
@@ -482,12 +479,8 @@ def _page_colours(page):
 
 
 def _all_pages(page, server, event_link):
-    """Admin list, event detail, visitor page and login page, with an admin session."""
-    page.goto(f"{server}/admin/login")
-    page.click(".password-login summary")                  # the password is the fallback under the passkey button
-    page.fill("#password", ADMIN_PASSWORD)
-    page.click(".password-login button[type=submit]")
-    page.wait_for_url(f"{server}/admin")
+    """Admin list, event detail, visitor page and home page (no sign-in needed)."""
+    page.goto(f"{server}/admin")
     detail = server + page.locator("a.event-row").first.get_attribute("href")
     return {"admin list": f"{server}/admin", "event detail": detail, "visitor": event_link,
             "home": f"{server}/"}
@@ -536,33 +529,38 @@ def test_iphone_safari_upload_flow(playwright, event_link):
     browser.close()
 
 
-def test_organiser_passkey_sign_in_in_a_real_browser(playwright, server, event_link):
-    """Chromium's virtual authenticator stands in for Touch ID / Windows Hello: add a passkey in
-    the organiser area, sign out, then sign in again without typing anything."""
+def test_everyone_can_manage_events_without_signing_in(playwright, server):
+    """A brand-new browser (no cookies, no password) does everything an organiser can."""
     browser = playwright.chromium.launch()
-    page = browser.new_page(bypass_csp=True)
-    cdp = page.context.new_cdp_session(page)
-    cdp.send("WebAuthn.enable")
-    cdp.send("WebAuthn.addVirtualAuthenticator", {"options": {
-        "protocol": "ctap2", "transport": "internal", "hasResidentKey": True,
-        "hasUserVerification": True, "isUserVerified": True}})
-    server = server.replace("127.0.0.1", "localhost")      # browsers refuse passkeys for bare IP addresses
-    page.goto(f"{server}/admin")
-    expect(page).to_have_url(f"{server}/admin/login")      # closed without signing in
-    page.click(".password-login summary")                  # password is the fallback
-    page.fill("#password", ADMIN_PASSWORD)
-    page.click(".password-login button[type=submit]")
+    context = browser.new_context(bypass_csp=True)
+    page = context.new_page()
+    page.on("dialog", lambda d: d.accept())                # "Are you sure?" questions
+    page.goto(f"{server}/admin/login")                     # the old sign-in address just opens the area
+    expect(page).to_have_url(f"{server}/admin")
+    assert page.locator("input[type=password]").count() == 0
+    page.fill("input[name=name]", "Без пароля")
+    page.press("input[name=name]", "Enter")
+    page.wait_for_url(re.compile(r"/admin/events/\d+"))
+    detail = page.url
+    page.set_input_files("#photo-input", [str(NASA / n) for n in KOCH_PHOTOS[:2]])
+    page.wait_for_function("document.getElementById('process-text').textContent.startsWith('Обработано 2 из 2')",
+                           timeout=60_000)
+    link = page.input_value("#visitor-link")
+    page.click("form[action$='/toggle'] button")           # search off, then on again
+    expect(page.locator("form[action$='/toggle'] button")).to_contain_text("Включить")
+    page.click("form[action$='/toggle'] button")
+    expect(page.locator("form[action$='/toggle'] button")).to_contain_text("Выключить")
+    page.fill("#expiry-days", "10")                        # keep the photos for 10 days
+    page.click("form[action$='/expiry'] button")
+    page.click("form[action$='/new-link'] button")         # a new visitor link
+    expect(page.locator("#visitor-link")).not_to_have_value(link)
+    page.locator("#photo-grid .tile-delete").first.click() # delete one photo
+    expect(page.locator("#photo-grid .tile")).to_have_count(1)
+    page.goto(page.input_value("#visitor-link"))           # the gallery opens for everyone
+    expect(page.locator("#event-title")).to_contain_text("Без пароля")
+    page.goto(detail)
+    page.click("form[action$='/delete'] button")           # delete the whole event
     page.wait_for_url(f"{server}/admin")
-    page.fill("#passkey-name", "E2E browser")
-    page.click("#passkey-add")
-    page.wait_for_selector(".passkey-list, #passkey-status.alert-error", timeout=10_000)
-    assert page.locator(".passkey-list").count(), page.inner_text("#passkey-status")
-    expect(page.locator(".passkey-list")).to_contain_text("E2E browser")
-    page.click("text=Выйти")
-    page.wait_for_url(f"{server}/admin/login")
-    page.goto(f"{server}/admin")
-    expect(page).to_have_url(f"{server}/admin/login")
-    page.click("#passkey-login")                           # no password typed
-    page.wait_for_url(f"{server}/admin")
-    expect(page.locator("h1")).to_have_text("Ваши мероприятия")
+    expect(page.locator("a.event-row", has_text="Без пароля")).to_have_count(0)
+    assert context.cookies() == [] or all(c["name"] != "admin_session" for c in context.cookies())
     browser.close()

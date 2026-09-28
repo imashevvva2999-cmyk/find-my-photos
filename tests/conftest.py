@@ -16,10 +16,8 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.passwords import hash_password  # noqa: E402  (no settings needed)
 
 TEST_DB = "findmyphotos_test"
-ADMIN_PASSWORD = "test-admin-password-1234"
 NASA = ROOT / "test_data" / "collection_40"
 SEARCH = ROOT / "test_data" / "search"
 SAMPLES = ROOT / "sample_photos"
@@ -57,7 +55,6 @@ os.environ.update({
     "DATABASE_URL": TEST_URL,
     "DATA_DIR": str(DATA_DIR),
     "SECRET_KEY": "test-secret-" + "x" * 40,
-    "ADMIN_PASSWORD_HASH": hash_password(ADMIN_PASSWORD),
     "COOKIE_SECURE": "false",
     "MIN_FREE_DISK_MB": "0",
     "SEARCHES_PER_10_MIN": "1000",
@@ -70,7 +67,7 @@ migrate.upgrade(TEST_URL)
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import db, main, matching, security, worker  # noqa: E402
+from app import db, main, matching, worker  # noqa: E402
 
 ORIGIN = {"Origin": "http://testserver"}
 
@@ -85,9 +82,8 @@ def app():
 def clean_state(app):
     """Every test starts with an empty database, an empty data folder and empty caches."""
     with db.connect() as conn:
-        conn.execute("TRUNCATE events, photos, faces, rate_limits, search_log, worker_heartbeats, admin_state, admin_passkeys, passkey_challenges "
+        conn.execute("TRUNCATE events, photos, faces, rate_limits, search_log, worker_heartbeats "
                      "RESTART IDENTITY CASCADE")
-    security._valid_after["checked"] = 0.0
     for path in sorted(DATA_DIR.rglob("*"), reverse=True):
         path.unlink() if path.is_file() else path.rmdir()
     matching.clear_cache()
@@ -101,10 +97,8 @@ def client(app):
 
 @pytest.fixture
 def admin(app):
-    c = TestClient(app, headers=ORIGIN)
-    r = c.post("/admin/login", data={"password": ADMIN_PASSWORD}, follow_redirects=False)
-    assert r.status_code == 303, r.text
-    return c
+    """A visitor managing events: the site has no sign-in, so this is an ordinary client."""
+    return TestClient(app, headers=ORIGIN)
 
 
 def create_event(admin, name="Test event") -> tuple[int, str]:

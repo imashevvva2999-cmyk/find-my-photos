@@ -6,7 +6,6 @@ program with a message that names the variable, instead of failing later at rand
 import hashlib
 import hmac
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,7 +25,6 @@ class ConfigError(RuntimeError):
 class Settings:
     database_url: str
     secret_key: str
-    admin_password_hash: str
     data_dir: Path
     cookie_secure: bool
     event_retention_days: int       # default lifetime of an event's photos and face data
@@ -43,16 +41,14 @@ class Settings:
     search_concurrency: int         # searches computed in parallel
     search_queue: int               # searches allowed to wait; more get "busy, try again"
     searches_per_10_min: int        # per visitor IP and event
-    login_failures_per_15_min: int  # per IP; the global limit is 10x this
     worker_threads: int
     min_free_disk_mb: int
     db_pool_max: int
     log_level: str
     public_base_url: str            # address guests use (e.g. the Vercel domain); "" = this server's address
-    import_token_sha256: str = ""  # IMPORT_TOKEN_SHA256: turns the photo-file import on (only during a transfer)
 
     def derived_key(self, purpose: str) -> str:
-        """Separate keys for sessions and result links, derived from SECRET_KEY."""
+        """Separate keys (e.g. for photo links), derived from SECRET_KEY."""
         return hmac.new(self.secret_key.encode(), purpose.encode(), hashlib.sha256).hexdigest()
 
 
@@ -100,14 +96,10 @@ def load_settings(env=None) -> Settings:
     secret_key = env.get("SECRET_KEY", "")
     if len(secret_key) < 32:
         problems.append("SECRET_KEY is missing or shorter than 32 characters")
-    password_hash = env.get("ADMIN_PASSWORD_HASH", "")
-    if password_hash and not password_hash.startswith("scrypt$"):  # optional: the site has no sign-in
-        problems.append("ADMIN_PASSWORD_HASH is missing - run: .venv/bin/python scripts/set_admin_password.py")
 
     s = Settings(
         database_url=database_url,
         secret_key=secret_key,
-        admin_password_hash=password_hash,
         data_dir=Path(env.get("DATA_DIR", str(BASE_DIR / "data"))).resolve(),
         cookie_secure=_get_bool(env, "COOKIE_SECURE", False, problems),
         event_retention_days=_get_int(env, "EVENT_RETENTION_DAYS", 90, 1, 365, problems),
@@ -124,16 +116,12 @@ def load_settings(env=None) -> Settings:
         search_concurrency=_get_int(env, "SEARCH_CONCURRENCY", 2, 1, 32, problems),
         search_queue=_get_int(env, "SEARCH_QUEUE", 64, 0, 1000, problems),
         searches_per_10_min=_get_int(env, "SEARCHES_PER_10_MIN", 30, 1, 100_000, problems),
-        login_failures_per_15_min=_get_int(env, "LOGIN_FAILURES_PER_15_MIN", 5, 1, 1000, problems),
         worker_threads=_get_int(env, "WORKER_THREADS", 2, 1, 16, problems),
         min_free_disk_mb=_get_int(env, "MIN_FREE_DISK_MB", 1024, 0, 10_000_000, problems),
         db_pool_max=_get_int(env, "DB_POOL_MAX", 20, 2, 200, problems),
         log_level=env.get("LOG_LEVEL", "INFO").upper(),
         public_base_url=env.get("PUBLIC_BASE_URL", "").strip().rstrip("/"),
-        import_token_sha256=env.get("IMPORT_TOKEN_SHA256", "").strip().lower(),
     )
-    if s.import_token_sha256 and not re.fullmatch(r"[0-9a-f]{64}", s.import_token_sha256):
-        problems.append("IMPORT_TOKEN_SHA256 must be a SHA-256 hex digest (64 characters)")
     if s.public_base_url and not s.public_base_url.startswith(("https://", "http://")):
         problems.append(f"PUBLIC_BASE_URL must start with https:// (got {s.public_base_url!r})")
     if s.strong_match < s.match_threshold:

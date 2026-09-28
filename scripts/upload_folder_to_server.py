@@ -3,11 +3,11 @@ organiser API (same checks as the admin page: format, size, duplicates). Then wa
 server has found the faces in all of them.
 
     .venv/bin/python scripts/upload_folder_to_server.py --server https://example.onrender.com \
-        --password-file data/.deploy-admin-password --event-name "Технокадр" "photo 2"
+        --event-name "Технокадр" "photo 2"
 
 Re-running is safe: photos already in the event are refused as duplicates, so an interrupted
 upload can simply be started again (use --event-id to continue the same event).
-The password is read from a file and never printed.
+The site has no sign-in, so no password is needed.
 """
 import argparse
 import re
@@ -24,7 +24,6 @@ EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--server", required=True)
-    parser.add_argument("--password-file", type=Path, help="only if the server still has a sign-in")
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--event-name")
     target.add_argument("--event-id", type=int)
@@ -36,11 +35,6 @@ def main() -> None:
     if not files:
         raise SystemExit(f"No photos in {args.folder}")
     client = httpx.Client(base_url=server, headers={"Origin": server}, timeout=httpx.Timeout(120, connect=20))
-
-    if args.password_file:
-        r = client.post("/admin/login", data={"password": args.password_file.read_text().strip()})
-        if r.status_code != 303:
-            raise SystemExit(f"Login failed (HTTP {r.status_code}). Check ADMIN_PASSWORD_HASH on the server.")
 
     if args.event_id:
         event_id = args.event_id

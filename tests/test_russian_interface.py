@@ -13,7 +13,6 @@ def test_pages_are_in_russian(admin, client):
     for phrase in ("Найти мои фото", "Сделать фото", "Загрузить фото", "Даю согласие", "Все фотографии", "Конфиденциальность"):
         assert phrase in visitor, phrase
     assert "Ваши мероприятия" in admin.get("/admin").text
-    assert "Вход для организатора" in client.get("/admin/login").text
     assert "Ссылка недействительна" in client.get("/e/not-a-real-token-at-all-000").text
 
 
@@ -23,5 +22,3 @@ def test_server_messages_are_in_russian(admin, client):
     assert r.status_code == 422 and CYRILLIC.search(r.json()["message"])
     r = client.post("/e/not-a-real-token-at-all-000/search", content=b"x")
     assert r.status_code == 404 and CYRILLIC.search(r.json()["message"])
-    r = client.post("/admin/login", data={"password": "wrong"})
-    assert "Неверный пароль" in r.text

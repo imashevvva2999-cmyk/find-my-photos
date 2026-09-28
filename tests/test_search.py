@@ -171,9 +171,10 @@ def test_missing_files_give_404_not_500(admin, client):
     assert client.get(match["download"]).status_code == 404
 
 
-def test_visitors_cannot_use_admin_photo_urls(admin, client):
+def test_organiser_photo_urls_are_open_to_everyone(admin, client):
+    """No sign-in (a public one-time site): anyone can open the organiser's photo URLs."""
     event_id, _ = indexed_event(admin, ["photo_30.jpg"])
-    assert client.get("/admin/photos/1/original", follow_redirects=False).status_code in (303, 401)
+    assert client.get("/admin/photos/1/original", follow_redirects=False).status_code == 200
     assert admin.get("/admin/photos/1/unknown-kind").status_code == 404
 
 

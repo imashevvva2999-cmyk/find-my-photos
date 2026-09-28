@@ -67,16 +67,16 @@ def test_running_processes_survive_a_schema_change(app):
     import psycopg
     from app import db
     from app.config import settings
-    query = "SELECT * FROM admin_state WHERE key <> %s"
+    query = "SELECT * FROM search_log WHERE outcome <> %s"
     with db.connect() as conn:
         for _ in range(10):  # more than psycopg's default threshold for caching a query plan
             conn.execute(query, ("x",)).fetchall()
         conn.commit()
         with psycopg.connect(settings.database_url, autocommit=True) as other:  # "the migration"
-            other.execute("ALTER TABLE admin_state ADD COLUMN IF NOT EXISTS extra_test_column INT")
+            other.execute("ALTER TABLE search_log ADD COLUMN IF NOT EXISTS extra_test_column INT")
         try:
             conn.execute(query, ("x",)).fetchall()
         finally:
             conn.rollback()
             with psycopg.connect(settings.database_url, autocommit=True) as other:
-                other.execute("ALTER TABLE admin_state DROP COLUMN IF EXISTS extra_test_column")
+                other.execute("ALTER TABLE search_log DROP COLUMN IF EXISTS extra_test_column")

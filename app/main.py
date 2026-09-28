@@ -1,6 +1,7 @@
 """Web routes.
 
-- /admin/...      organiser area (hashed password, signed session, same-origin POSTs)
+- /admin/...      organiser area: open to everyone, no sign-in (a public one-time site);
+                  POSTs must come from this site's own pages (same-origin check)
 - /e/<token>/...  one event's visitor page; <token> is a long random secret
 - /healthz, /readyz  health checks (no private data)
 
@@ -10,7 +11,6 @@ import asyncio
 import hashlib
 import logging
 import secrets
-import tarfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -27,9 +27,8 @@ from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, TimestampSigner, URLSafeTimedSerializer
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.middleware.sessions import SessionMiddleware
 
-from . import db, faces, images, importer, maintenance, matching, migrate, passkeys, security, storage, uploads, worker
+from . import db, faces, images, maintenance, matching, migrate, security, storage, uploads, worker
 from .config import ALLOWED_EXTENSIONS, settings
 from .observability import EdgeMiddleware, setup_logging
 
@@ -112,15 +111,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
-app.middleware("http")(security.admin_guard)  # innermost: runs after the session is loaded
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=settings.derived_key("session"),
-    session_cookie="admin_session",
-    max_age=security.SESSION_MAX_AGE,
-    same_site="strict",
-    https_only=settings.cookie_secure,
-)
+app.middleware("http")(security.admin_guard)  # innermost: same-origin check for /admin POSTs
 app.add_middleware(EdgeMiddleware)  # outermost: headers, size limits, redacted access log
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 
@@ -161,33 +152,6 @@ def robots():
     return "User-agent: *\nDisallow: /\n"
 
 
-# --------------------------------------------------------------------------- photo-file import
-# Off (404) unless IMPORT_TOKEN_SHA256 is set; see app/importer.py.
-
-@app.post(importer.PATH)
-async def import_files(request: Request):
-    if not importer.authorised(request.headers.get("authorization", "")):
-        raise HTTPException(404)
-    archive = storage.new_incoming_path()
-    try:
-        with open(archive, "wb") as out:
-            async for chunk in request.stream():
-                out.write(chunk)
-        result = await run_in_threadpool(importer.extract, archive)
-    except tarfile.TarError:
-        return JSONResponse({"error": "bad_archive"}, status_code=400)
-    finally:
-        archive.unlink(missing_ok=True)
-    return result
-
-
-@app.get(importer.PATH)
-def import_inventory(request: Request, event: int):
-    if not importer.authorised(request.headers.get("authorization", "")):
-        raise HTTPException(404)
-    return importer.inventory(event)
-
-
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
@@ -216,72 +180,15 @@ def readyz():
     return JSONResponse(body, status_code=200 if ready else 503)
 
 
-# --------------------------------------------------------------------------- admin login
+# --------------------------------------------------------------------------- old sign-in address
 
 @app.get("/admin/login")
-def login_page(request: Request):
-    return RedirectResponse("/admin", status_code=303)  # no sign-in: the organiser area is open
-
-
-@app.post("/admin/login")
-def login(request: Request, password: str = Form("")):
-    result = security.attempt_login(security.client_ip(request), password)
-    if result == "blocked":
-        return templates.TemplateResponse(request, "login.html", {
-            "error": "Слишком много неудачных попыток. Подождите 15 минут и попробуйте снова."}, status_code=429)
-    if result == "ok":
-        security.start_session(request.session)
-        log.info("admin logged in")
-        return RedirectResponse("/admin", status_code=303)
-    return templates.TemplateResponse(request, "login.html", {"error": "Неверный пароль."}, status_code=401)
-
-
-def _passkey_error(message: str, status: int = 400) -> JSONResponse:
-    return JSONResponse({"error": "passkey", "message": message}, status_code=status)
-
-
-async def _json_body(request: Request) -> dict:
-    try:
-        body = await request.json()
-    except ValueError:
-        body = None
-    if not isinstance(body, dict):
-        raise HTTPException(400, "Неверный запрос.")
-    return body
-
-
-@app.post("/admin/passkey/login/options")
-def passkey_login_options(request: Request):
-    return PlainTextResponse(passkeys.authentication_options(request), media_type="application/json")
-
-
-@app.post("/admin/passkey/login/verify")
-async def passkey_login_verify(request: Request):
-    """Sign in with a passkey. Failed attempts count towards the same limit as wrong passwords."""
-    body = await _json_body(request)
-    ip_key = "login:" + security._hash_key(security.client_ip(request))
-    if not await run_in_threadpool(security.RateLimiter.hit, ip_key, settings.login_failures_per_15_min, security.LOGIN_WINDOW):
-        return _passkey_error("Слишком много неудачных попыток. Подождите 15 минут и попробуйте снова.", 429)
-    try:
-        await run_in_threadpool(passkeys.authenticate, request, body)
-    except passkeys.PasskeyError as exc:
-        return _passkey_error(str(exc), 401)
-    await run_in_threadpool(security.RateLimiter.undo, ip_key, security.LOGIN_WINDOW)
-    security.start_session(request.session)
-    log.info("admin logged in with a passkey")
-    return {"ok": True, "next": "/admin"}
-
-
-@app.post("/admin/logout")
-def logout(request: Request):
-    """Logs out every admin session (the one shared admin account), including copied cookies."""
-    security.revoke_all_sessions()
-    request.session.clear()
-    return RedirectResponse("/admin/login", status_code=303)
+def login_page():
+    return RedirectResponse("/admin", status_code=303)  # no sign-in any more; old bookmarks still work
 
 
 # --------------------------------------------------------------------------- admin area
-# Every /admin route below is protected by security.admin_guard (middleware).
+# Open to everyone: anyone with the address can create, change and delete events and photos.
 
 def load_event(conn, event_id: int):
     event = conn.execute("SELECT *, expires_at < now() AS expired FROM events WHERE id = %s", (event_id,)).fetchone()
@@ -298,29 +205,7 @@ def admin_home(request: Request):
                    COUNT(p.id) AS photo_count, COALESCE(SUM(p.face_count), 0) AS face_count
             FROM events e LEFT JOIN photos p ON p.event_id = e.id
             GROUP BY e.id ORDER BY e.id DESC""").fetchall()
-    return templates.TemplateResponse(request, "admin_home.html",
-                                      {"events": events, "passkeys": passkeys.list_passkeys()})
-
-
-@app.post("/admin/api/passkeys/options")
-def passkey_register_options(request: Request):
-    return PlainTextResponse(passkeys.registration_options(request), media_type="application/json")
-
-
-@app.post("/admin/api/passkeys")
-async def passkey_register(request: Request):
-    body = await _json_body(request)
-    try:
-        await run_in_threadpool(passkeys.register, request, body.get("credential"), str(body.get("name", "")))
-    except passkeys.PasskeyError as exc:
-        return _passkey_error(str(exc))
-    return {"ok": True}
-
-
-@app.post("/admin/passkeys/{passkey_id}/delete")
-def passkey_delete(passkey_id: int):
-    passkeys.delete(passkey_id)
-    return RedirectResponse("/admin", status_code=303)
+    return templates.TemplateResponse(request, "admin_home.html", {"events": events})
 
 
 @app.post("/admin/events")

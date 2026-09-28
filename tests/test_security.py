@@ -1,21 +1,34 @@
-"""Admin authentication, brute-force limits, CSRF origin checks and body-before-auth."""
+"""The site has no sign-in (a public one-time site): everyone can view and manage events.
+What remains: cross-site POSTs are refused, size limits, security headers."""
 import asyncio
 
-from conftest import ADMIN_PASSWORD, ORIGIN, create_event
+from conftest import ORIGIN, create_event
 
-from app import db, main, security
-from app.passwords import hash_password
-
-
-def test_admin_area_requires_login(client):
-    assert client.get("/admin", follow_redirects=False).headers["location"] == "/admin/login"
-    assert client.get("/admin/api/events/1/status").status_code == 401
-    assert client.post("/admin/events", data={"name": "x"}, follow_redirects=False).status_code in (303, 401)
-    assert client.get("/admin/photos/1/original", follow_redirects=False).status_code in (303, 401)
+from app import main
 
 
-def test_unauthenticated_upload_is_rejected_before_the_body_is_read():
-    """Anyone could otherwise make the server spool unlimited data to disk."""
+def test_everything_works_without_signing_in(client):
+    """A first-time visitor (no cookies, no password) can manage events."""
+    assert client.get("/admin", follow_redirects=False).status_code == 200
+    assert client.get("/admin/login", follow_redirects=False).headers["location"] == "/admin"  # old address
+    event_id, token = create_event(client, "Открытое мероприятие")
+    assert client.get(f"/admin/events/{event_id}").status_code == 200
+    assert client.get(f"/admin/api/events/{event_id}/status").status_code == 200
+    assert client.get(f"/e/{token}").status_code == 200
+    assert not client.cookies                               # no session cookie is ever set
+    assert client.post(f"/admin/events/{event_id}/delete", follow_redirects=False).status_code == 303
+    assert client.get(f"/admin/events/{event_id}").status_code == 404
+
+
+def test_sign_in_routes_are_gone(client):
+    assert client.post("/admin/login", data={"password": "x"}).status_code == 405
+    assert client.post("/admin/logout").status_code == 404
+    for path in ("/admin/passkey/login/options", "/admin/api/passkeys/options", "/internal/import-files"):
+        assert client.post(path).status_code == 404, path
+
+
+def test_oversized_upload_is_rejected_before_the_body_is_read():
+    """Anyone can upload (no sign-in), so a declared oversized body must be refused unread."""
     chunks_read = 0
 
     async def receive():
@@ -36,42 +49,16 @@ def test_unauthenticated_upload_is_rejected_before_the_body_is_read():
         "http_version": "1.1", "asgi": {"version": "3.0"}, "state": {},
     }
     asyncio.run(main.app(scope, receive, send))
-    assert sent[0]["status"] in (401, 413)
+    assert sent[0]["status"] == 413
     assert chunks_read <= 1, f"server read {chunks_read} MB before rejecting"
 
 
-def test_wrong_passwords_lock_out_the_ip(client):
-    for _ in range(5):
-        assert client.post("/admin/login", data={"password": "wrong"}).status_code == 401
-    r = client.post("/admin/login", data={"password": ADMIN_PASSWORD}, follow_redirects=False)
-    assert r.status_code == 429          # even the right password waits until the lockout ends
-    with db.connect() as conn:
-        assert conn.execute("SELECT COUNT(*) AS n FROM rate_limits").fetchone()["n"] >= 1  # shared, not in memory
-
-
-def test_session_cookie_flags(client):
-    r = client.post("/admin/login", data={"password": ADMIN_PASSWORD}, follow_redirects=False)
-    cookie = r.headers["set-cookie"].lower()
-    assert "httponly" in cookie and "samesite=strict" in cookie
-
-
-def test_changing_the_password_logs_out_existing_sessions(admin, monkeypatch):
-    assert admin.get("/admin", follow_redirects=False).status_code == 200
-    monkeypatch.setattr(security.settings, "admin_password_hash", hash_password("a-new-password-5678"))
-    assert admin.get("/admin", follow_redirects=False).status_code == 303
-
-
-def test_logout_invalidates_session(admin):
-    admin.post("/admin/logout")
-    assert admin.get("/admin", follow_redirects=False).status_code == 303
-
-
-def test_admin_posts_from_another_site_are_refused(admin):
-    event_id, _ = create_event(admin)
+def test_admin_posts_from_another_site_are_refused(client):
+    event_id, _ = create_event(client)
     evil = {"Origin": "https://evil.example"}
-    assert admin.post(f"/admin/events/{event_id}/delete", headers=evil, follow_redirects=False).status_code == 403
-    assert admin.post("/admin/events", data={"name": "x"}, headers={"Origin": ""}, follow_redirects=False).status_code == 403
-    assert admin.get(f"/admin/events/{event_id}").status_code == 200   # still exists
+    assert client.post(f"/admin/events/{event_id}/delete", headers=evil, follow_redirects=False).status_code == 403
+    assert client.post("/admin/events", data={"name": "x"}, headers={"Origin": ""}, follow_redirects=False).status_code == 403
+    assert client.get(f"/admin/events/{event_id}").status_code == 200   # still exists
 
 
 def test_security_headers(client):
@@ -84,5 +71,5 @@ def test_security_headers(client):
     assert "noindex" in h["x-robots-tag"]
 
 
-def test_origin_header_default_is_accepted(admin):
-    assert admin.post("/admin/events", data={"name": "ok"}, headers=ORIGIN, follow_redirects=False).status_code == 303
+def test_origin_header_default_is_accepted(client):
+    assert client.post("/admin/events", data={"name": "ok"}, headers=ORIGIN, follow_redirects=False).status_code == 303

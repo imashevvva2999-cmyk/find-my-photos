@@ -5,54 +5,12 @@ import time
 
 from fastapi.testclient import TestClient
 from PIL import Image
-from conftest import ADMIN_PASSWORD, NASA, ORIGIN, SEARCH, create_event, files_in_data, process_all, upload
+from conftest import NASA, ORIGIN, SEARCH, create_event, files_in_data, process_all, upload
 
 from app import faces, main, maintenance, matching, security, worker
 from app.config import settings
 
 SELFIE = (SEARCH / "search2_koch_2018_portrait.jpg").read_bytes()
-
-
-def test_parallel_wrong_passwords_cannot_exceed_the_limit(app):
-    """N4: the attempt is counted before the slow password check."""
-    codes, lock = [], threading.Lock()
-
-    def attempt():
-        c = TestClient(app, headers=ORIGIN)
-        r = c.post("/admin/login", data={"password": "wrong-guess"})
-        with lock:
-            codes.append(r.status_code)
-
-    threads = [threading.Thread(target=attempt) for _ in range(20)]
-    [t.start() for t in threads]
-    [t.join() for t in threads]
-    assert codes.count(401) <= settings.login_failures_per_15_min      # at most 5 real password checks
-    assert codes.count(429) >= 20 - settings.login_failures_per_15_min
-
-
-def test_logout_revokes_a_copied_session_cookie(admin, app):
-    """N8: a stolen cookie stops working after logout."""
-    stolen = admin.cookies.get("admin_session")
-    admin.post("/admin/logout")
-    thief = TestClient(app, headers=ORIGIN, cookies={"admin_session": stolen})
-    security._valid_after["checked"] = 0.0  # skip the 5-second cache
-    assert thief.get("/admin", follow_redirects=False).status_code == 303
-
-
-def test_session_has_an_absolute_lifetime(admin, monkeypatch):
-    """N8: activity does not extend a session beyond 12 hours."""
-    assert admin.get("/admin", follow_redirects=False).status_code == 200
-    real = time.time
-    monkeypatch.setattr(security.time, "time", lambda: real() + security.SESSION_MAX_AGE + 60)
-    assert admin.get("/admin", follow_redirects=False).status_code == 303
-
-
-def test_login_still_works_after_logout(admin, app):
-    admin.post("/admin/logout")
-    security._valid_after["checked"] = 0.0
-    fresh = TestClient(app, headers=ORIGIN)
-    assert fresh.post("/admin/login", data={"password": ADMIN_PASSWORD}, follow_redirects=False).status_code == 303
-    assert fresh.get("/admin", follow_redirects=False).status_code == 200
 
 
 def test_ultra_hdr_style_mpo_jpegs_are_accepted(admin):

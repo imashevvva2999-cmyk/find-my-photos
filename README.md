@@ -23,18 +23,12 @@ worker. Stop both with **Ctrl+C**. The database keeps running (`./scripts/postgr
 
 Requirements: macOS with `python3`, `curl` and **Postgres.app** (<https://postgresapp.com>).
 
-### Admin password
+### No sign-in
 
-Only a scrypt **hash** is stored (`ADMIN_PASSWORD_HASH` in `.env`). To set a new password:
-
-```bash
-.venv/bin/python scripts/set_admin_password.py
-```
-
-Changing the password, or clicking **Log out**, ends every admin session on every device
-(a copied session cookie stops working too). Sessions also end 12 hours after login. After
-5 wrong attempts from one address, that address is blocked for 15 minutes; a flood of failures
-from many addresses only slows every login down (so the real admin is not locked out).
+This is a public one-time site: there is no password and no sign-in. Anyone who opens the
+site can view, create, change and delete events and photos. The only protection left is a
+same-origin check: changes (POST requests) are accepted only from the site's own pages, so
+another website cannot trigger them in a visitor's browser.
 
 ## Use it
 
@@ -58,7 +52,7 @@ from many addresses only slows every login down (so the real admin is not locked
 | Safe images | `app/images.py` | JPEG/PNG/WEBP/HEIC only, pixel limit checked before decoding, metadata-free copies |
 | Uploads | `app/uploads.py` | Per-file validation, size cap while copying, DB row + file committed together |
 | Matching | `app/matching.py` | Per-event embedding matrix cached in memory, reloaded when `index_version` changes |
-| Security | `app/security.py` | Admin session with password version, same-origin POST check, DB-backed rate limits |
+| Security | `app/security.py` | Same-origin POST check, DB-backed rate limits (no sign-in) |
 | Retention | `app/maintenance.py` | Deletes expired events, orphaned files, old counters and statistics |
 | Logging, headers | `app/observability.py` | Redacted request log, CSP/HSTS headers, request size limits |
 | Database | `app/db.py`, `app/migrate.py`, `app/migrations/` | Checked connection pool; versioned migrations |
@@ -93,8 +87,7 @@ and in backups until those are rotated.
 | Variable | Default | Meaning |
 |---|---|---|
 | `DATABASE_URL` | set by setup | App login to PostgreSQL |
-| `SECRET_KEY` | generated | Root secret (session and link keys are derived from it) |
-| `ADMIN_PASSWORD_HASH` | generated | scrypt hash |
+| `SECRET_KEY` | generated | Root secret (photo-link keys are derived from it) |
 | `COOKIE_SECURE` | `false` | Set `true` behind HTTPS (Secure cookie + HSTS) |
 | `EVENT_RETENTION_DAYS` | `90` | Default event lifetime |
 | `RESULT_LINK_MINUTES` | `120` | Result link lifetime |

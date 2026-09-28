@@ -38,13 +38,11 @@ fetch_model face_detection_yunet_2023mar.onnx "$ZOO/face_detection_yunet/face_de
 fetch_model face_recognition_sface_2021dec.onnx "$ZOO/face_recognition_sface/face_recognition_sface_2021dec.onnx" \
   0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79
 
-# 3. Secrets in .env (mode 600): session/link key and the admin password hash
+# 3. Secrets in .env (mode 600): the key photo links are signed with (the site has no sign-in)
 touch .env && chmod 600 .env
 if ! grep -q '^SECRET_KEY=' .env; then
   $PY -c "import secrets; from app.envfile import update_env_file; update_env_file({'SECRET_KEY': secrets.token_hex(32)})"
 fi
-$PY scripts/set_admin_password.py --convert           # an old plain-text password becomes a hash
-grep -q '^ADMIN_PASSWORD_HASH=' .env || $PY scripts/set_admin_password.py --generate
 
 # 4. Database: this project's own PostgreSQL server, then pending migrations
 ./scripts/postgres.sh setup

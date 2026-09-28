@@ -118,7 +118,6 @@
         showRejected(result.rejected);
       } catch (err) {
         showRejected(batch.map((f) => ({ name: f.name, reason: err.message })));
-        if (err.loginRequired) { location.href = "/admin/login"; return; }
         if (err.stopAll) {           // e.g. disk full or event deleted: the rest would fail too
           showRejected(good.slice(i + FILES_PER_REQUEST).map((f) => ({ name: f.name, reason: "Не отправлено: " + err.message })));
           break;
@@ -147,7 +146,6 @@
         try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
         if (xhr.status === 200) return resolve(body);
         const err = new Error(body.message || `Не удалось загрузить (ошибка ${xhr.status}). Попробуйте ещё раз.`);
-        err.loginRequired = xhr.status === 401;
         err.stopAll = [404, 507].includes(xhr.status);
         reject(err);
       };
@@ -195,7 +193,6 @@
       while (more && gen === generation) {
         const url = `/admin/api/events/${eventId}/status` + (cursor ? `?since=${encodeURIComponent(cursor)}` : "");
         const res = await fetch(url);
-        if (res.status === 401) { location.href = "/admin/login"; return; }
         if (!res.ok) throw new Error(`status ${res.status}`);
         const s = await res.json();
         if (gen !== generation) break; // the grid was reset while this request was running
@@ -286,7 +283,6 @@
       if (!confirm(`Удалить «${p.original_name}» и данные о лицах на нём?`)) return;
       try {
         const res = await fetch(`/admin/api/photos/${p.id}/delete`, { method: "POST" });
-        if (res.status === 401) { location.href = "/admin/login"; return; }
         if (!res.ok && res.status !== 404) throw new Error();
         generation++;            // ignore any status answer that is still on its way
         cursor = null;           // reload the whole grid and recount
@@ -305,7 +301,6 @@
     e.target.disabled = true;
     try {
       const res = await fetch(`/admin/api/events/${eventId}/retry`, { method: "POST" });
-      if (res.status === 401) { location.href = "/admin/login"; return; }
       if (!res.ok) throw new Error();
     } catch {
       alert("Не удалось перезапустить обработку. Попробуйте ещё раз.");
