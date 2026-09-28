@@ -10,7 +10,7 @@ def test_pages_are_in_russian(admin, client):
     _, token = create_event(admin, "Технокадр")
     visitor = client.get(f"/e/{token}").text
     assert '<html lang="ru">' in visitor and "Технокадр" in visitor
-    for phrase in ("Найти мои фото", "Сделать фото", "Загрузить фото", "Даю согласие", "Все фотографии", "Конфиденциальность"):
+    for phrase in ("Найти мои фото", "Сделайте селфи", "Сделать снимок", "Даю согласие", "Все фотографии", "Конфиденциальность"):
         assert phrase in visitor, phrase
     assert "Ваши мероприятия" in admin.get("/admin").text
     assert "Ссылка недействительна" in client.get("/e/not-a-real-token-at-all-000").text

@@ -1,17 +1,18 @@
-"""The visitor page always offers both ways to give a photo, and browsers get the current version."""
+"""Visitors give a photo only with the camera (no file upload), and browsers get the current version."""
 import re
 
 from conftest import create_event
 
 
-def test_visitor_page_offers_camera_and_upload(admin, client):
+def test_visitor_page_offers_the_camera_only(admin, client):
     _, token = create_event(admin)
     r = client.get(f"/e/{token}")
     html = r.text
-    assert 'id="tab-camera"' in html and "Сделать фото" in html
-    assert 'id="tab-upload"' in html and "Загрузить фото" in html
-    for element in ("camera-panel", "camera-start", "camera-snap", "camera-retake", "selfie-input", "consent", "search-btn"):
+    for element in ("camera-panel", "camera-start", "camera-snap", "camera-retake", "consent", "search-btn", "photo-fab"):
         assert f'id="{element}"' in html, element
+    assert 'type="file"' not in html and "Загрузить фото" not in html and "загрузите" not in html
+    for gone in ("selfie-input", "tab-upload", "menu-upload", "upload-panel"):
+        assert f'id="{gone}"' not in html, gone
 
 
 def test_pages_are_not_stored_and_assets_are_versioned(admin, client):

@@ -1,22 +1,16 @@
-// Visitor page: take a selfie or upload a photo, then search. Both ways produce the same
-// kind of image file, so the search, timer and results are identical. The photo is sent
-// once, when "Find my photos" is clicked, and removed from the page after the search.
-// Desktop: the page shows the whole event as a gallery; a floating camera button opens the
-// photo panel, and matches replace the gallery until "Back to all event photos" is clicked.
+// Visitor page: take a selfie with the device camera, review or retake it, then search.
+// The photo is sent once, when "Find my photos" is clicked, and removed from the page after
+// the search. Desktop: the page shows the whole event as a gallery; the floating camera button
+// opens the photo panel with the webcam already on, and matches replace the gallery until
+// "Back to all event photos" is clicked.
 (() => {
   const root = document.getElementById("visitor");
   const form = document.getElementById("search-form");
   if (!root || !form) return; // search is turned off for this event
 
   const token = root.dataset.token;
-  const maxMb = Number(root.dataset.maxMb);
   const MAX_SELFIE_SIDE = 1600; // plenty for face matching, keeps uploads small on phones
   const $ = (id) => document.getElementById(id);
-  const input = $("selfie-input");
-  const drop = $("selfie-drop");
-  const preview = $("selfie-preview");
-  const hint = $("selfie-hint");
-  const hintDefault = hint.innerHTML;
   const consent = $("consent");
   const button = $("search-btn");
   const message = $("message");
@@ -24,14 +18,11 @@
   const resultsTitle = $("results-title");
   const grid = $("result-grid");
   const viewer = $("viewer");
-  const replaceBtn = $("upload-replace"); // desktop only
   const desktop = window.matchMedia("(min-width: 900px) and (hover: hover) and (pointer: fine)"); // same as style.css
   const searchCard = $("search-card");
   const galleryView = $("gallery");
 
-  let file = null;          // what "Find my photos" sends
-  let uploadedFile = null;  // each tab remembers its own choice
-  let selfieFile = null;
+  let file = null;          // the selfie "Find my photos" sends
   let searching = false;
 
   // Russian plural forms: plural(5, "фотография", "фотографии", "фотографий") → "фотографий"
@@ -53,107 +44,10 @@
   function updateButton() {
     button.disabled = searching || !(file && consent.checked);
   }
-
-  // ---- upload an existing photo
-  // Large photos are reduced in the browser to the same size as camera selfies (longest side
-  // 1600 px) before they are sent: plenty for face matching, much faster, and small enough for
-  // any hosting limit on request size. Files the browser cannot decode (e.g. HEIC outside
-  // Safari) are sent unchanged and the server reads them.
-  const SHRINK_ABOVE_BYTES = 2.5 * 1024 * 1024;
-  async function shrink(f) {
-    if (!("createImageBitmap" in window)) return f;
-    let bitmap;
-    try { bitmap = await createImageBitmap(f, { imageOrientation: "from-image" }); } catch { return f; }
-    const scale = Math.min(1, MAX_SELFIE_SIDE / Math.max(bitmap.width, bitmap.height));
-    if (scale === 1 && f.size <= SHRINK_ABOVE_BYTES) { bitmap.close(); return f; }
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#fff"; // transparent PNG areas become white, not black
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-    return blob ? new File([blob], "photo.jpg", { type: "image/jpeg" }) : f;
-  }
-
-  let pickRequest = 0; // a newer choice wins if two photos are picked quickly
-  async function pick(chosen) {
-    showMessage();
-    if (!chosen) return;
-    const request = ++pickRequest;
-    if (mode !== "upload") setMode("upload");
-    let f = chosen;
-    const isImage = f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name);
-    if (!isImage) {
-      showMessage("error", "Выберите файл изображения (JPG, PNG, WEBP или HEIC).");
-      return;
-    }
-    if (f.size > maxMb * 1024 * 1024) {
-      showMessage("error", `Эта фотография больше ${maxMb} МБ. Выберите файл поменьше.`);
-      return;
-    }
-    f = await shrink(f);
-    if (request !== pickRequest) return;
-    file = uploadedFile = f;
-    if (preview.src) URL.revokeObjectURL(preview.src);
-    preview.src = URL.createObjectURL(f);
-    preview.hidden = false;
-    hint.innerHTML = '<span class="muted small">Нажмите, чтобы выбрать другую фотографию</span>';
-    replaceBtn.hidden = false;
-    updateButton();
-    if (desktop.matches) { openComposer(); consent.focus(); }
-  }
-
-  function clearUpload() {
-    uploadedFile = null;
-    if (preview.src) URL.revokeObjectURL(preview.src);
-    preview.removeAttribute("src");
-    preview.hidden = true;
-    hint.innerHTML = hintDefault;
-    replaceBtn.hidden = true;
-    input.value = "";
-  }
-
-  preview.addEventListener("error", () => (preview.hidden = true)); // e.g. HEIC can't preview in some browsers
-  input.addEventListener("change", () => pick(input.files[0]));
   consent.addEventListener("change", updateButton);
-  ["dragenter", "dragover"].forEach((t) =>
-    drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("dragging"); }));
-  ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, () => drop.classList.remove("dragging")));
-  drop.addEventListener("drop", (e) => { e.preventDefault(); pick(e.dataTransfer.files[0]); });
-  replaceBtn.addEventListener("click", () => input.click());
 
-  // ---- tabs: "Take a photo" / "Upload a photo" (keyboard: arrow keys, Home, End)
-  const tabs = { camera: $("tab-camera"), upload: $("tab-upload") };
-  const order = ["camera", "upload"];
-  const panels = { camera: $("camera-panel"), upload: $("upload-panel") };
-  let mode = "upload";
-
-  function setMode(next, focus = false) {
-    mode = next;
-    for (const name of order) {
-      const selected = name === next;
-      tabs[name].setAttribute("aria-selected", String(selected));
-      tabs[name].tabIndex = selected ? 0 : -1;
-      panels[name].hidden = !selected;
-    }
-    if (focus) tabs[next].focus();
-    if (next !== "camera") stopCamera(); // never leave the camera on in the background
-    file = next === "camera" ? selfieFile : uploadedFile;
-    showMessage();
-    updateButton();
-  }
-  for (const name of order) {
-    tabs[name].addEventListener("click", () => setMode(name));
-    tabs[name].addEventListener("keydown", (e) => {
-      const i = order.indexOf(name);
-      const target = { ArrowRight: order[(i + 1) % order.length], ArrowLeft: order[(i + order.length - 1) % order.length],
-                       Home: order[0], End: order[order.length - 1] }[e.key];
-      if (target) { e.preventDefault(); setMode(target, true); }
-    });
-  }
+  // The camera panel is in use: always on phones (it is on the page), on desktop while the panel is open.
+  const cameraInView = () => !desktop.matches || searchCard.classList.contains("open");
 
   // ---- camera: live preview -> take photo -> review -> retake
   const video = $("camera-video");
@@ -175,39 +69,38 @@
     switch (err && err.name) {
       case "NotAllowedError":
       case "SecurityError":
-        return "Доступ к камере запрещён. Чтобы воспользоваться камерой, разрешите доступ к ней для этого сайта " +
+        return "Доступ к камере запрещён. Чтобы сделать селфи, разрешите доступ к камере для этого сайта " +
                "в настройках браузера (на компьютере — значок камеры в адресной строке, на телефоне — настройки сайта) " +
-               "и в настройках конфиденциальности устройства, затем снова нажмите «Включить камеру». " +
-               "Можно также выбрать «Загрузить фото».";
+               "и в настройках конфиденциальности устройства, затем снова нажмите «Включить камеру».";
       case "NotFoundError":
       case "OverconstrainedError":
-        return "На этом устройстве не найдена камера. Воспользуйтесь кнопкой «Загрузить фото».";
+        return "На этом устройстве не найдена камера. Откройте ссылку на мероприятие на телефоне или компьютере с камерой.";
       case "NotSupportedError":
-        return "Этот браузер не может использовать камеру на этой странице. Воспользуйтесь кнопкой «Загрузить фото».";
+        return "Этот браузер не может использовать камеру на этой странице. Откройте ссылку в другом браузере " +
+               "(например, Chrome или Safari) или на другом устройстве.";
       case "NotReadableError":
       case "AbortError":
         return "Камера занята другим приложением или не смогла включиться. Закройте другие приложения, " +
-               "которые используют камеру, и попробуйте снова — или выберите «Загрузить фото».";
+               "которые используют камеру, и попробуйте снова.";
       default:
-        return "Не удалось включить камеру. Попробуйте ещё раз или выберите «Загрузить фото».";
+        return "Не удалось включить камеру. Попробуйте ещё раз.";
     }
   }
 
   function resetStartButton() {
     startBtn.disabled = false;
-    startBtn.textContent = selfieFile ? "Сделать другое фото" : "Включить камеру";
+    startBtn.textContent = file ? "Сделать другое фото" : "Включить камеру";
   }
 
   async function startCamera() {
     showCameraError("");
     showMessage();
     if (!window.isSecureContext) {
-      showCameraError("Камера работает только на защищённой странице (https://). Выберите «Загрузить фото» " +
-                      "или попросите у организатора ссылку с https.");
+      showCameraError("Камера работает только на защищённой странице (https://). Попросите у организатора ссылку с https.");
       return;
     }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      showCameraError("Этот браузер не даёт доступа к камере. Воспользуйтесь кнопкой «Загрузить фото».");
+      showCameraError("Этот браузер не даёт доступа к камере. Откройте ссылку в другом браузере или на другом устройстве.");
       return;
     }
     const request = ++cameraRequest;
@@ -226,8 +119,8 @@
       }
       return;
     }
-    // The visitor may have switched tabs or left the page while the permission prompt was open.
-    if (request !== cameraRequest || mode !== "camera" || document.hidden) {
+    // The visitor may have closed the panel or left the page while the permission prompt was open.
+    if (request !== cameraRequest || !cameraInView() || document.hidden) {
       newStream.getTracks().forEach((t) => t.stop());
       resetStartButton();
       return;
@@ -235,11 +128,10 @@
     stream = newStream;
     video.srcObject = stream;
     await video.play().catch(() => {});
-    if (request !== cameraRequest || mode !== "camera" || document.hidden) {
+    if (request !== cameraRequest || !cameraInView() || document.hidden) {
       newStream.getTracks().forEach((t) => t.stop()); // left while the video was starting
       return;
     }
-    selfieFile = null;
     file = null;
     updateButton();
     placeholder.hidden = true;
@@ -259,7 +151,7 @@
     video.srcObject = null;
     video.hidden = true;
     snapBtn.hidden = true;
-    if (!selfieFile) {
+    if (!file) {
       placeholder.hidden = false;
       startBtn.hidden = false;
       resetStartButton();
@@ -276,22 +168,23 @@
     canvas.toBlob((blob) => {
       if (!blob) { showCameraError("Не удалось сделать снимок. Попробуйте ещё раз."); return; }
       // Kept only in this page's memory; sent once, when "Find my photos" is clicked.
-      selfieFile = new File([blob], "selfie.jpg", { type: "image/jpeg" });
+      file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
       if (shot.src) URL.revokeObjectURL(shot.src);
-      shot.src = URL.createObjectURL(selfieFile);
+      shot.src = URL.createObjectURL(file);
       shot.hidden = false;
       stopCamera();
       retakeBtn.hidden = false;
-      file = selfieFile;
       updateButton();
       showMessage("info", consent.checked
         ? "Проверьте селфи. Если всё хорошо, нажмите «Найти мои фото» или «Переснять»."
         : "Проверьте селфи, отметьте согласие и нажмите «Найти мои фото» (или «Переснять»).");
+      retakeBtn.focus({ preventScroll: true }); // keep the selfie itself in view for review
+      shot.scrollIntoView({ block: "nearest" });
     }, "image/jpeg", 0.92);
   }
 
   function clearSelfie() {
-    selfieFile = null;
+    file = null;
     if (shot.src) URL.revokeObjectURL(shot.src);
     shot.removeAttribute("src");
     shot.hidden = true;
@@ -299,12 +192,11 @@
     placeholder.hidden = false;
     startBtn.hidden = false;
     resetStartButton();
+    updateButton();
   }
 
   function retake() {
     clearSelfie();
-    file = null;
-    updateButton();
     startCamera();
   }
 
@@ -313,64 +205,34 @@
   retakeBtn.addEventListener("click", retake);
   window.addEventListener("pagehide", stopCamera);
   document.addEventListener("visibilitychange", () => { if (document.hidden) stopCamera(); });
-  setMode("upload"); // initial tab; must run after the camera variables above exist
 
-  // ---- desktop: floating camera button (bottom-right) -> "Take photo" / "Upload photo".
-  // The chosen photo, consent and "Find my photos" then appear in a small panel (the same
-  // form phones see on the page), so camera, upload and search code are shared.
+  // ---- desktop: the floating camera button (bottom-right) opens the photo panel with the webcam
+  // already on. The panel is the same form phones see on the page, so the camera and search code
+  // are shared.
   const fab = $("photo-fab");
-  const menu = $("photo-menu");
-  const menuItems = [$("menu-camera"), $("menu-upload")];
 
-  function openMenu() {
-    menu.hidden = false;
-    fab.setAttribute("aria-expanded", "true");
-    menuItems[0].focus();
-  }
-  function closeMenu(focusFab = false) {
-    if (menu.hidden) return;
-    menu.hidden = true;
-    fab.setAttribute("aria-expanded", "false");
-    if (focusFab) fab.focus();
-  }
   function openComposer() {
     searchCard.classList.add("open");
+    fab.setAttribute("aria-expanded", "true");
+    showMessage();
+    if (stream) snapBtn.focus(); // the camera is already on
+    else if (file) retakeBtn.focus(); // a selfie is waiting for review
+    else startCamera();          // straight to the live preview, no extra "Turn on camera" click
   }
   function closeComposer() {
     if (!searchCard.classList.contains("open")) return;
     searchCard.classList.remove("open");
+    fab.setAttribute("aria-expanded", "false");
     stopCamera(); // never leave the camera on behind a closed panel
   }
 
-  fab.addEventListener("click", () => (menu.hidden ? openMenu() : closeMenu()));
-  fab.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(true); });
-  $("menu-camera").addEventListener("click", () => {
-    closeMenu();
-    if (mode !== "camera") setMode("camera");
-    openComposer();
-    if (stream) snapBtn.focus(); // the camera is already on
-    else startCamera();          // straight to the live preview, no extra "Turn on camera" click
-  });
-  $("menu-upload").addEventListener("click", () => {
-    closeMenu();
-    closeComposer(); // also turns a running camera off
-    input.click();   // the computer's file chooser; the panel opens once a photo is chosen
+  fab.addEventListener("click", () => {
+    if (searchCard.classList.contains("open")) closeComposer();
+    else openComposer();
   });
   $("composer-close").addEventListener("click", () => { closeComposer(); fab.focus(); });
-  menu.addEventListener("keydown", (e) => {
-    const i = menuItems.indexOf(document.activeElement);
-    if (e.key === "Escape") { e.preventDefault(); closeMenu(true); }
-    else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      menuItems[(i + (e.key === "ArrowDown" ? 1 : menuItems.length - 1)) % menuItems.length].focus();
-    } else if (e.key === "Home" || e.key === "End") {
-      e.preventDefault();
-      menuItems[e.key === "Home" ? 0 : menuItems.length - 1].focus();
-    } else if (e.key === "Tab") closeMenu();
-  });
-  document.addEventListener("click", (e) => { if (!$("photo-fab-wrap").contains(e.target)) closeMenu(); });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && menu.hidden && !viewer.open && !document.body.classList.contains("menu-open") &&
+    if (e.key === "Escape" && !viewer.open && !document.body.classList.contains("menu-open") &&
         searchCard.classList.contains("open")) {
       closeComposer();
       fab.focus();
@@ -382,7 +244,6 @@
     e.preventDefault();
     if (!file || !consent.checked || searching) return;
     searching = true;
-    const sentFrom = mode;
     const sent = file;
     updateButton();
     button.textContent = "Ищем…";
@@ -407,7 +268,7 @@
         await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
       }
       if (!res.ok) {
-        const retakeTip = sentFrom === "camera" && ["no_face", "multiple_faces", "face_too_small"].includes(data.error)
+        const retakeTip = ["no_face", "multiple_faces", "face_too_small"].includes(data.error)
           ? " Сделайте новое селфи и попробуйте снова." : "";
         showMessage("error", data.message + retakeTip);
       } else {
@@ -420,9 +281,7 @@
       stopTimer(ok ? data : null);
       // Remove the photo that was sent from the page: it was used for this one search only.
       // (A new photo chosen while the search was running is kept.)
-      if (sentFrom === "camera" && selfieFile === sent) clearSelfie();
-      if (sentFrom === "upload" && uploadedFile === sent) clearUpload();
-      if (file === sent) file = null;
+      if (file === sent) clearSelfie();
       searching = false;
       button.textContent = "Найти мои фото";
       updateButton();
@@ -480,10 +339,10 @@
     const waiting = data.waiting_photos > 0
       ? ` Ещё ${photos(data.waiting_photos)} в обработке — повторите поиск позже, чтобы учесть и их.`
       : "";
-    const removed = " Ваше фото использовалось только для этого поиска и удалено со страницы.";
+    const removed = " Ваше селфи использовалось только для этого поиска и удалено со страницы.";
     if (data.matches.length === 0) {
       showMessage("empty", `Среди ${data.searched_photos} ${plural(data.searched_photos, "фотографии", "фотографий", "фотографий")} мероприятия возможных совпадений не найдено. ` +
-        "Попробуйте другое своё фото: чёткое, при хорошем освещении, лицом к камере." + waiting + removed);
+        "Попробуйте сделать новое селфи: при хорошем освещении, лицом к камере." + waiting + removed);
       return;
     }
     showMessage("success", "Поиск завершён." + removed + waiting);
@@ -1014,7 +873,7 @@
     if (!link) return;
     const action = link.dataset.action;
     setMenu(false);
-    if (action === "find") { openMenu(); return; }
+    if (action === "find") { openComposer(); return; }
     if (!results.hidden) $("results-back").click();
     setView(action === "sphere" ? "sphere" : "grid");
     window.scrollTo({ top: 0, behavior: animate() ? "smooth" : "auto" });

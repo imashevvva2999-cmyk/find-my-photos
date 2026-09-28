@@ -9,12 +9,12 @@
 {% endif %}
 {% endblock %}
 {% block content %}
-<div id="visitor" data-token="{{ event.token }}" data-max-mb="{{ max_mb }}"></div>
+<div id="visitor" data-token="{{ event.token }}"></div>
 
 <section class="hero{% if event.is_open %} hero-library{% endif %}">
   <p class="eyebrow">Найдите свои фото</p>
   <h1 id="event-title" class="headline">{{ event.name }}</h1>
-  <p class="muted mobile-only">Сделайте селфи или загрузите одно чёткое фото своего лица — и мы покажем фотографии мероприятия, на которых вы можете быть, в том числе групповые.</p>
+  <p class="muted mobile-only">Сделайте селфи — и мы покажем фотографии мероприятия, на которых вы можете быть, в том числе групповые.</p>
   {% if event.is_open %}
   <p class="muted desktop-only hero-sub">Чтобы найти фотографии, на которых есть вы, нажмите кнопку с камерой в правом нижнем углу.</p>
   {% endif %}
@@ -65,18 +65,7 @@
     <button type="button" class="composer-close" id="composer-close" aria-label="Закрыть" title="Закрыть">✕</button>
   </div>
   <form id="search-form" class="stack">
-    <div class="source-tabs" role="tablist" aria-label="Как передать фото">
-      <button type="button" role="tab" class="source-tab" id="tab-camera" aria-controls="camera-panel" aria-selected="false">
-        <span class="source-icon" aria-hidden="true">📷</span> Сделать фото
-        <span class="source-hint">камерой устройства</span>
-      </button>
-      <button type="button" role="tab" class="source-tab" id="tab-upload" aria-controls="upload-panel" aria-selected="true">
-        <span class="source-icon" aria-hidden="true">🖼️</span> Загрузить фото
-        <span class="source-hint">с вашего устройства</span>
-      </button>
-    </div>
-
-    <div id="camera-panel" role="tabpanel" aria-labelledby="tab-camera" class="camera-panel" hidden>
+    <div id="camera-panel" class="camera-panel">
       <div class="camera-frame" id="camera-frame">
         <video id="camera-video" autoplay playsinline muted hidden></video>
         <img id="camera-shot" alt="Ваше селфи" hidden>
@@ -92,20 +81,6 @@
       </div>
       <p class="muted small camera-note" id="camera-note">Только вы, лицом к камере, при хорошем освещении. Снимок остаётся на этой странице, пока вы не нажмёте «Найти мои фото».</p>
       <p class="alert alert-error" id="camera-error" role="alert" hidden></p>
-    </div>
-
-    <div id="upload-panel" role="tabpanel" aria-labelledby="tab-upload">
-      <label class="dropzone dropzone-selfie" for="selfie-input" id="selfie-drop">
-        <input id="selfie-input" type="file" accept="image/*,.heic,.heif">
-        <img id="selfie-preview" alt="Выбранное вами фото" hidden>
-        <span id="selfie-hint">
-          <strong>Выберите фото своего лица</strong>
-          <span class="muted small">Только вы, лицом к камере, хорошее освещение · до {{ max_mb }} МБ</span>
-        </span>
-      </label>
-      <div class="camera-actions desktop-only">
-        <button type="button" class="btn btn-ghost" id="upload-replace" hidden>Заменить фото</button>
-      </div>
     </div>
 
     <div class="privacy">
@@ -158,20 +133,10 @@
   <p class="menu-addr">{{ event.name }} · личная ссылка на мероприятие<br>Фотографии и данные о лицах будут удалены {{ event.expires_at.strftime('%d.%m.%Y') }}. Ваше селфи никогда не сохраняется.</p>
 </div>
 
-<!-- Desktop only (hidden on phones and tablets by the stylesheet): floating camera button -->
+<!-- Desktop only (hidden on phones and tablets by the stylesheet): floating camera button, opens the webcam -->
 <div class="photo-fab-wrap" id="photo-fab-wrap">
-  <div class="photo-menu" id="photo-menu" role="menu" aria-labelledby="photo-fab" hidden>
-    <button type="button" role="menuitem" class="photo-menu-item" id="menu-camera" tabindex="-1">
-      <svg class="photo-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
-      <span><strong>Сделать фото</strong><span class="photo-menu-hint">веб-камерой</span></span>
-    </button>
-    <button type="button" role="menuitem" class="photo-menu-item" id="menu-upload" tabindex="-1">
-      <svg class="photo-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15v5h16v-5"/></svg>
-      <span><strong>Загрузить фото</strong><span class="photo-menu-hint">выбрать файл изображения</span></span>
-    </button>
-  </div>
-  <button type="button" class="photo-fab" id="photo-fab" aria-haspopup="menu" aria-expanded="false"
-          aria-controls="photo-menu" aria-label="Найти мои фото: сделать или загрузить фото" title="Найти мои фото">
+  <button type="button" class="photo-fab" id="photo-fab" aria-expanded="false"
+          aria-controls="search-card" aria-label="Найти мои фото: сделать селфи веб-камерой" title="Найти мои фото">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
     <span class="photo-fab-plus" aria-hidden="true">+</span>
   </button>

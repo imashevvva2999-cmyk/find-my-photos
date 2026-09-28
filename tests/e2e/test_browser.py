@@ -127,20 +127,11 @@ def finish_search(page, expected_min: int):
 
 
 def choose_camera(page):
-    """Desktop: floating button -> "Take photo" (starts the camera). Phones: the tab, then "Turn on camera"."""
+    """Desktop: the floating camera button opens the panel with the webcam on. Phones: "Turn on camera"."""
     if page.is_visible("#photo-fab"):
         page.click("#photo-fab")
-        page.click("#menu-camera")
     else:
-        page.click("#tab-camera")
         page.click("#camera-start")
-
-
-def choose_upload_with_fab(page, photo):
-    with page.expect_file_chooser() as chooser:
-        page.click("#photo-fab")
-        page.click("#menu-upload")
-    chooser.value.set_files(str(photo))
 
 
 def camera_flow(page, link):
@@ -165,25 +156,20 @@ def camera_flow(page, link):
     assert len(searches) == 1
 
 
-def upload_flow(page, link):
-    page.goto(link)
-    assert page.get_attribute("#tab-upload", "aria-selected") == "true"
-    page.set_input_files("#selfie-input", str(SELFIE))
-    expect(page.locator("#selfie-preview")).to_be_visible()   # waits until the preview has loaded
-    finish_search(page, expected_min=2)
-    expect(page.locator("#selfie-preview")).to_be_hidden()    # the photo was removed from the page
-
-
 def camera_browser(playwright, fake_video):
     return playwright.chromium.launch(args=[
         "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
         f"--use-file-for-fake-video-capture={fake_video}"])
 
 
-def test_desktop_upload_flow_and_clean_download(playwright, event_link, tmp_path):
-    browser = playwright.chromium.launch()
-    page = browser.new_page(accept_downloads=True, bypass_csp=True)
-    upload_flow(page, event_link)
+def test_desktop_camera_flow_and_clean_download(playwright, event_link, fake_video, tmp_path):
+    browser = camera_browser(playwright, fake_video)
+    context = browser.new_context(permissions=["camera"], accept_downloads=True, bypass_csp=True)
+    page = context.new_page()
+    sizes = []
+    page.on("request", lambda r: sizes.append(len(r.post_data_buffer or b"")) if r.url.endswith("/search") else None)
+    camera_flow(page, event_link)
+    assert sizes and max(sizes) < 1.5 * 1024 * 1024, sizes  # small request, far below hosting limits
     with page.expect_download() as dl:
         page.locator("#result-grid a.btn").first.click()
     saved = tmp_path / "result.jpg"
@@ -198,19 +184,19 @@ def test_desktop_camera_flow(playwright, event_link, fake_video):
     context = browser.new_context(permissions=["camera"], bypass_csp=True)
     page = context.new_page()
     camera_flow(page, event_link)
-    assert page.is_visible("#photo-fab") and page.is_hidden("#tab-camera")  # went through the floating button
+    assert page.is_visible("#photo-fab")                   # went through the floating button
     assert_results_view_and_back(page)
     assert page.evaluate("document.getElementById('camera-video').srcObject") is None  # camera off
     browser.close()
 
 
-def test_mobile_camera_and_upload_flows(playwright, event_link, fake_video):
+def test_mobile_camera_flow(playwright, event_link, fake_video):
     browser = camera_browser(playwright, fake_video)
     context = browser.new_context(**playwright.devices["Pixel 7"], permissions=["camera"], bypass_csp=True)
     page = context.new_page()
     camera_flow(page, event_link)
-    upload_flow(page, event_link)
-    assert page.is_hidden("#photo-fab") and page.is_visible("#tab-camera")  # phones keep the tabs
+    assert page.is_hidden("#photo-fab") and page.is_visible("#camera-panel")  # phones: the camera is on the page
+    assert page.locator("input[type=file]").count() == 0     # no photo upload for visitors
     assert page.is_hidden("#gallery") and page.locator("#gallery-grid img").count() == 0  # desktop-only for now
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")  # no sideways scrolling
     browser.close()
@@ -242,7 +228,7 @@ def test_desktop_gallery_shows_all_event_photos(playwright, event_link):
     assert page.text_content("#gallery-count") == "5 фотографий"
     assert page.is_hidden("#gallery-status")               # nothing still being prepared
     page.wait_for_function("[...document.querySelectorAll('#gallery-grid img')].every(i => i.complete && i.naturalWidth > 0)")
-    for hidden in ("#selfie-drop", "#tab-camera", "#tab-upload", "#search-btn", "#consent"):  # no form on the main screen
+    for hidden in ("#camera-panel", "#search-btn", "#consent"):  # no form on the main screen
         assert page.is_hidden(hidden), hidden
     assert page.is_visible("#photo-fab")
     sizes = page.evaluate("[...document.querySelectorAll('#gallery-grid button')].slice(0, 2).map(b => [b.offsetWidth, b.offsetHeight])")
@@ -267,49 +253,74 @@ def test_desktop_gallery_shows_all_event_photos(playwright, event_link):
     browser.close()
 
 
-def test_desktop_floating_button_menu(playwright, event_link):
-    browser = playwright.chromium.launch()
-    page = browser.new_page(viewport={"width": 1280, "height": 800}, bypass_csp=True)
+def test_desktop_floating_button_opens_the_webcam(playwright, event_link, fake_video):
+    browser = camera_browser(playwright, fake_video)
+    context = browser.new_context(viewport={"width": 1280, "height": 800}, permissions=["camera"], bypass_csp=True)
+    page = context.new_page()
     page.goto(event_link)
-    assert page.is_hidden("#tab-camera") and page.is_hidden("#photo-menu") and page.is_hidden("#search-card")
+    assert page.is_hidden("#search-card") and page.locator("input[type=file]").count() == 0
     box = page.locator("#photo-fab").bounding_box()
     assert 1280 - (box["x"] + box["width"]) < 40 and 800 - (box["y"] + box["height"]) < 40  # bottom-right corner
-    page.click("#photo-fab")
-    expect(page.locator("#photo-menu")).to_be_visible()
+    page.click("#photo-fab")                               # one click: panel open, live webcam preview
+    expect(page.locator("#search-card")).to_be_visible()
     assert page.get_attribute("#photo-fab", "aria-expanded") == "true"
-    assert page.locator("#photo-menu [role=menuitem]").all_inner_texts() == [
-        "Сделать фото\nвеб-камерой", "Загрузить фото\nвыбрать файл изображения"]
-    assert page.evaluate("document.activeElement.id") == "menu-camera"
-    page.keyboard.press("ArrowDown")
-    assert page.evaluate("document.activeElement.id") == "menu-upload"
-    page.keyboard.press("Escape")                          # keyboard: closes and returns to the button
-    expect(page.locator("#photo-menu")).to_be_hidden()
+    page.wait_for_function("document.getElementById('camera-video').videoWidth > 0", timeout=15_000)
+    expect(page.locator("#camera-snap")).to_be_focused()
+    page.keyboard.press("Escape")                          # keyboard: closes, camera off, focus back on the button
+    expect(page.locator("#search-card")).to_be_hidden()
+    assert page.evaluate("document.getElementById('camera-video').srcObject") is None
     assert page.evaluate("document.activeElement.id") == "photo-fab"
     page.click("#photo-fab")
-    page.click("h1")                                       # a click elsewhere closes it
-    expect(page.locator("#photo-menu")).to_be_hidden()
+    page.wait_for_function("document.getElementById('camera-video').videoWidth > 0", timeout=15_000)
+    page.click("#photo-fab")                               # the button closes the panel again
+    expect(page.locator("#search-card")).to_be_hidden()
+    assert page.evaluate("document.getElementById('camera-video').srcObject") is None
+    page.click("#menu-btn")                                # the full-screen menu's "Find my photos" does the same
+    page.locator(".menu-link", has_text="Найти мои фото").click()
+    expect(page.locator("#search-card")).to_be_visible()
+    page.wait_for_function("document.getElementById('camera-video').videoWidth > 0", timeout=15_000)
     browser.close()
 
 
-def test_desktop_upload_with_floating_button_and_replace(playwright, event_link):
+@pytest.mark.parametrize("size", [(1024, 700), (1280, 800), (1440, 900), (1920, 1080)])
+@pytest.mark.parametrize("scheme", ["dark", "light"])
+def test_desktop_headers_hide_the_photos_scrolling_under_them(playwright, event_link, tmp_path, size, scheme):
+    """While scrolling, the header band and the sticky "All photos" bar are solid: no photo
+    shows through them or in a gap between them, at any desktop window size. Checked on the
+    pixels: with the header's text hidden, everything above the bar's bottom line is page colour."""
     browser = playwright.chromium.launch()
-    page = browser.new_page(viewport={"width": 1280, "height": 800}, bypass_csp=True)
-    searches = track_searches(page)
+    context = browser.new_context(viewport={"width": size[0], "height": size[1]}, color_scheme=scheme,
+                                  reduced_motion="reduce", bypass_csp=True)
+    page = context.new_page()
     page.goto(event_link)
-    choose_upload_with_fab(page, NASA / OTHERS[0])         # first choice: a different photo
-    expect(page.locator("#selfie-preview")).to_be_visible()
-    first = page.get_attribute("#selfie-preview", "src")
-    with page.expect_file_chooser() as chooser:            # "Replace photo" opens the file chooser again
-        page.click("#upload-replace")
-    chooser.value.set_files(str(SELFIE))
-    expect(page.locator("#selfie-preview")).not_to_have_attribute("src", first)
-    assert searches == []                                  # choosing a photo does not search
-    expect(page.locator("#search-card")).to_be_visible()   # preview, consent and button in the panel
-    finish_search(page, expected_min=2)
-    assert len(searches) == 1
-    expect(page.locator("#selfie-preview")).to_be_hidden()
-    expect(page.locator("#upload-replace")).to_be_hidden()
-    assert_results_view_and_back(page)
+    expect(page.locator("#gallery-grid button")).to_have_count(5)
+    page.wait_for_function("[...document.querySelectorAll('#gallery-grid img')].every(i => i.complete && i.naturalWidth > 0)")
+    page.click("#zoom-out")                                # small thumbnails, then pad the page so it can scroll far
+    page.evaluate("""() => {                            // inline styles via the DOM: allowed by the page's CSP
+        document.getElementById('gallery-grid').style.paddingBottom = '3000px';
+        for (const el of document.querySelectorAll('.topbar, .library-bar > *, .hero')) el.style.visibility = 'hidden';
+    }""")
+    page.wait_for_function("document.documentElement.scrollHeight > 3000 && "  # after the short reduced-motion transition
+                           "getComputedStyle(document.querySelector('.topbar')).visibility === 'hidden'")
+    page.wait_for_timeout(400)                             # children finish their own short transitions too
+    bg = page.evaluate("getComputedStyle(document.body).backgroundColor")
+    bg = tuple(int(v) for v in re.findall(r"\d+", bg)[:3])
+    for y in (60, 200, 450, 900, 1600):
+        page.evaluate(f"window.scrollTo(0, {y})")
+        page.wait_for_timeout(50)
+        bar = page.evaluate("document.querySelector('.library-bar').getBoundingClientRect().toJSON()")
+        shot = tmp_path / f"{y}.png"
+        page.screenshot(path=str(shot))
+        with Image.open(shot) as img:
+            img = img.convert("RGB")
+            scale = img.width / size[0]
+            bottom = int((bar["bottom"] - 2) * scale)       # stop above the bar's hairline
+            off = [(x, yy) for yy in range(0, bottom, 2) for x in range(0, img.width - 20, 7)
+                   if max(abs(c - d) for c, d in zip(img.getpixel((x, yy)), bg)) > 6]
+        assert off == [], (y, bar, off[:5])                  # no photo, gap or see-through area
+        if y >= 900:                                         # by then the bar is pinned under the header band
+            band = page.evaluate("parseFloat(getComputedStyle(document.body, '::before').height)")
+            assert abs(bar["top"] - (band - 1)) < 1.5, (bar, band)
     browser.close()
 
 
@@ -394,25 +405,6 @@ def test_admin_pages_use_the_same_design(playwright, server, event_link):
     browser.close()
 
 
-def test_large_uploaded_selfie_is_reduced_before_sending(playwright, event_link, tmp_path):
-    """A big photo (like a 24-megapixel camera file) is shrunk in the browser, so the request stays
-    far below hosting limits such as Vercel's 4.5 MB, and the search still finds the person."""
-    big = tmp_path / "big_selfie.jpg"
-    with Image.open(SELFIE) as img:
-        img.convert("RGB").resize((6000, int(6000 * img.height / img.width))).save(big, quality=97)
-    assert big.stat().st_size > 4.5 * 1024 * 1024
-    browser = playwright.chromium.launch()
-    page = browser.new_page(viewport={"width": 1440, "height": 900}, bypass_csp=True)
-    sizes = []
-    page.on("request", lambda r: sizes.append(len(r.post_data_buffer or b"")) if r.url.endswith("/search") else None)
-    page.goto(event_link)
-    choose_upload_with_fab(page, big)
-    expect(page.locator("#selfie-preview")).to_be_visible()
-    finish_search(page, expected_min=2)
-    assert sizes and max(sizes) < 1.5 * 1024 * 1024, sizes
-    browser.close()
-
-
 @pytest.mark.parametrize("error_name,expected", [
     ("NotAllowedError", "Доступ к камере запрещён"),        # what browsers report when the visitor clicks "Block"
     ("NotFoundError", "не найдена камера"),
@@ -445,7 +437,7 @@ def test_camera_unsupported_in_this_browser_shows_clear_message(playwright, even
     browser.close()
 
 
-def test_camera_is_not_left_on_when_switching_tabs_during_the_permission_prompt(playwright, event_link, fake_video):
+def test_camera_is_not_left_on_when_the_panel_closes_during_the_permission_prompt(playwright, event_link, fake_video):
     browser = camera_browser(playwright, fake_video)
     context = browser.new_context(permissions=["camera"], bypass_csp=True)
     context.add_init_script("""
@@ -458,9 +450,7 @@ def test_camera_is_not_left_on_when_switching_tabs_during_the_permission_prompt(
     page = context.new_page()
     page.goto(event_link)
     choose_camera(page)
-    with page.expect_file_chooser():                       # leave before the camera answers
-        page.click("#photo-fab")
-        page.click("#menu-upload")
+    page.click("#composer-close")                          # close before the camera answers
     page.wait_for_timeout(1500)
     states = page.evaluate("window.__streams.flatMap(s => s.getTracks().map(t => t.readyState))")
     assert states and all(s == "ended" for s in states)
@@ -519,16 +509,6 @@ def test_theme_switch_cycles_and_is_remembered(playwright, server, event_link):
     browser.close()
 
 
-def test_iphone_safari_upload_flow(playwright, event_link):
-    try:
-        browser = playwright.webkit.launch()
-    except Exception as exc:  # WebKit build not installed
-        pytest.skip(f"WebKit not available: {exc}")
-    context = browser.new_context(**playwright.devices["iPhone 13"], bypass_csp=True)
-    upload_flow(context.new_page(), event_link)
-    browser.close()
-
-
 def test_everyone_can_manage_events_without_signing_in(playwright, server):
     """A brand-new browser (no cookies, no password) does everything an organiser can."""
     browser = playwright.chromium.launch()
@@ -546,6 +526,10 @@ def test_everyone_can_manage_events_without_signing_in(playwright, server):
     page.wait_for_function("document.getElementById('process-text').textContent.startsWith('Обработано 2 из 2')",
                            timeout=60_000)
     link = page.input_value("#visitor-link")
+    page.goto(link)                                        # the site is called "Технокадр"
+    expect(page.locator("#event-title")).to_contain_text("Без пароля")
+    assert page.title() == "Без пароля · Технокадр" and page.inner_text(".wordmark") == "Технокадр"
+    page.goto(detail)
     page.click("form[action$='/toggle'] button")           # search off, then on again
     expect(page.locator("form[action$='/toggle'] button")).to_contain_text("Включить")
     page.click("form[action$='/toggle'] button")
