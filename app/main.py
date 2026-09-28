@@ -28,7 +28,7 @@ from itsdangerous import BadSignature, TimestampSigner, URLSafeTimedSerializer
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import db, faces, images, maintenance, matching, migrate, security, storage, uploads, worker
+from . import db, faces, images, maintenance, matching, migrate, security, storage, styles, uploads, worker
 from .config import ALLOWED_EXTENSIONS, settings
 from .observability import EdgeMiddleware, setup_logging
 
@@ -167,7 +167,14 @@ def readyz():
                        COUNT(*) FILTER (WHERE status = 'processing') AS processing,
                        COUNT(*) FILTER (WHERE status = 'error') AS error FROM photos""").fetchone()
             beat = conn.execute("SELECT EXTRACT(EPOCH FROM now() - max(beat_at))::float AS age FROM worker_heartbeats").fetchone()
+            st = conn.execute(f"""
+                SELECT COUNT(*) FILTER (WHERE styles_version >= %(v)s) AS done,
+                       COUNT(*) FILTER (WHERE styles_version < %(v)s AND styles_attempts < {worker.MAX_ATTEMPTS}) AS waiting,
+                       COUNT(*) FILTER (WHERE styles_version < %(v)s AND styles_attempts >= {worker.MAX_ATTEMPTS}) AS failed
+                FROM photos WHERE status = 'done'""", {"v": styles.STYLE_VERSION}).fetchone()
         body["queue"] = dict(q)
+        body["styles"] = {"version": styles.STYLE_VERSION, **dict(st)}
+        body["disk_free_mb"] = storage.free_disk_mb()
         age = beat["age"]
         body["worker"] = {"alive": age is not None and age < 60, "last_heartbeat_seconds": None if age is None else round(age)}
         if STARTUP["migrations_ok"] is None:  # the database was down at startup: check once now
@@ -466,9 +473,11 @@ def _run_search(event: dict, data: bytes) -> tuple[str, dict, int]:
         return "not_found", {"error": "not_found", "message": "Ссылка на мероприятие недействительна."}, 404
     ranked, compared = matching.search(event["id"], state["index_version"], you.embedding,
                                        settings.match_threshold, settings.max_results)
+    with db.connect() as conn:
+        styled = _styled_ids(conn, event["id"], [photo_id for photo_id, _ in ranked])
     matches = []
     for photo_id, score in ranked:
-        matches.append({**_photo_links(event, photo_id),
+        matches.append({**_photo_links(event, photo_id, photo_id in styled),
                         "strength": "higher" if score >= settings.strong_match else "lower"})
     return "ok", {"matches": matches, "searched_photos": state["done"], "waiting_photos": state["waiting"],
                   "compared_faces": compared, "timing": {"face_ms": face_ms, "match_ms": _ms(step)}}, 200
@@ -535,9 +544,24 @@ async def search(request: Request, token: str):
 GALLERY_PAGE = 500  # the page asks for all photos at once, in pages of this size
 
 
-def _photo_links(event: dict, photo_id: int) -> dict:
+def _photo_links(event: dict, photo_id: int, styled: bool = False) -> dict:
+    """Links for one photo. When its styled versions are ready, `styles` lists all three versions
+    (the original first) with their own view and download links; the photo stays one photo."""
     base = f"/e/{event['token']}/photo/{link_maker.dumps([event['id'], photo_id])}"
-    return {"thumb": f"{base}?size=thumb", "view": base, "download": f"{base}?download=1"}
+    links = {"thumb": f"{base}?size=thumb", "view": base, "download": f"{base}?download=1"}
+    if styled:
+        links["styles"] = [{"key": "original", "title": styles.TITLES["original"], "view": base, "download": f"{base}?download=1"}]
+        links["styles"] += [{"key": s, "title": styles.TITLES[s], "view": f"{base}?style={s}",
+                             "download": f"{base}?style={s}&download=1"} for s in styles.STYLES]
+    return links
+
+
+def _styled_ids(conn, event_id: int, photo_ids: list[int]) -> set[int]:
+    if not photo_ids:
+        return set()
+    rows = conn.execute("SELECT id FROM photos WHERE event_id = %s AND id = ANY(%s) AND styles_version >= %s",
+                        (event_id, photo_ids, styles.STYLE_VERSION)).fetchall()
+    return {r["id"] for r in rows}
 
 
 @app.get("/e/{token}/gallery")
@@ -552,14 +576,15 @@ def gallery(token: str, after: int = 0, limit: int = GALLERY_PAGE):
         return json_error("closed", "Это мероприятие сейчас выключено.", 403)
     limit = max(1, min(limit, GALLERY_PAGE))
     with db.connect() as conn:
-        rows = conn.execute("""SELECT id FROM photos WHERE event_id = %s AND status = 'done' AND id > %s
-                               ORDER BY id LIMIT %s""", (event["id"], after, limit + 1)).fetchall()
+        rows = conn.execute("""SELECT id, styles_version >= %s AS styled FROM photos
+                               WHERE event_id = %s AND status = 'done' AND id > %s
+                               ORDER BY id LIMIT %s""", (styles.STYLE_VERSION, event["id"], after, limit + 1)).fetchall()
         counts = conn.execute("""
             SELECT COUNT(*) FILTER (WHERE status = 'done') AS done,
                    COUNT(*) FILTER (WHERE status IN ('pending', 'processing')) AS waiting
             FROM photos WHERE event_id = %s""", (event["id"],)).fetchone() if after == 0 else None
     page = rows[:limit]
-    return JSONResponse({"photos": [{"id": r["id"], **_photo_links(event, r["id"])} for r in page],
+    return JSONResponse({"photos": [{"id": r["id"], **_photo_links(event, r["id"], r["styled"])} for r in page],
                          "next": page[-1]["id"] if len(rows) > limit else None,
                          "total": counts["done"] if counts else None,
                          "waiting": counts["waiting"] if counts else None},
@@ -567,12 +592,16 @@ def gallery(token: str, after: int = 0, limit: int = GALLERY_PAGE):
 
 
 @app.get("/e/{token}/photo/{key}")
-def visitor_photo(token: str, key: str, size: str = "preview", download: bool = False):
-    """One matched photo. The signed key proves it came from this visitor's search."""
+def visitor_photo(token: str, key: str, size: str = "preview", download: bool = False, style: str = "original"):
+    """One matched photo. The signed key proves it came from this visitor's search.
+    style=bw_editorial / editorial_film gives that styled version; it is never swapped for the
+    original (a missing styled file is a 404, so a download is always the version that was chosen)."""
     try:
         event_id, photo_id = link_signer.loads(key, max_age=settings.result_link_minutes * 60)
     except (BadSignature, ValueError, TypeError):
         raise HTTPException(404, "Срок действия ссылки истёк. Выполните поиск снова.")
+    if style != "original" and style not in styles.STYLES:
+        raise HTTPException(404)
     event = event_by_token(token)
     if event is None or event["id"] != event_id or not event["is_open"]:
         raise HTTPException(404)
@@ -581,11 +610,18 @@ def visitor_photo(token: str, key: str, size: str = "preview", download: bool = 
                              (photo_id, event_id)).fetchone()
     if photo is None:
         raise HTTPException(404)
+    if style != "original" and size != "thumb":
+        path = storage.styled_path(event_id, style, photo_id, "full" if download else "preview")
+        if not path.exists():
+            raise HTTPException(404)
+        if download:
+            return FileResponse(path, media_type="image/jpeg", filename=f"photo-{photo_id}-{style.replace('_', '-')}.jpg")
+        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
     if download:
         path = storage.display_path(event_id, photo_id)  # metadata-free copy, never the original
         if not path.exists():
             raise HTTPException(404)
-        return FileResponse(path, media_type="image/jpeg", filename=f"photo-{photo_id}.jpg")
+        return FileResponse(path, media_type="image/jpeg", filename=f"photo-{photo_id}-original.jpg")
     path = storage.thumb_path(event_id, photo_id) if size == "thumb" else storage.preview_path(event_id, photo_id)
     if not path.exists():
         raise HTTPException(404)

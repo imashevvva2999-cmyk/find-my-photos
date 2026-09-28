@@ -42,6 +42,7 @@ class Settings:
     search_queue: int               # searches allowed to wait; more get "busy, try again"
     searches_per_10_min: int        # per visitor IP and event
     worker_threads: int
+    style_threads: int
     min_free_disk_mb: int
     db_pool_max: int
     log_level: str
@@ -117,6 +118,7 @@ def load_settings(env=None) -> Settings:
         search_queue=_get_int(env, "SEARCH_QUEUE", 64, 0, 1000, problems),
         searches_per_10_min=_get_int(env, "SEARCHES_PER_10_MIN", 30, 1, 100_000, problems),
         worker_threads=_get_int(env, "WORKER_THREADS", 2, 1, 16, problems),
+        style_threads=_get_int(env, "STYLE_THREADS", 1, 0, 1, problems),
         min_free_disk_mb=_get_int(env, "MIN_FREE_DISK_MB", 1024, 0, 10_000_000, problems),
         db_pool_max=_get_int(env, "DB_POOL_MAX", 20, 2, 200, problems),
         log_level=env.get("LOG_LEVEL", "INFO").upper(),

@@ -37,6 +37,9 @@ fetch_model face_detection_yunet_2023mar.onnx "$ZOO/face_detection_yunet/face_de
   8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
 fetch_model face_recognition_sface_2021dec.onnx "$ZOO/face_recognition_sface/face_recognition_sface_2021dec.onnx" \
   0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79
+fetch_model selfie_multiclass_256x256.tflite \
+  https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite \
+  c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0
 
 # 3. Secrets in .env (mode 600): the key photo links are signed with (the site has no sign-in)
 touch .env && chmod 600 .env

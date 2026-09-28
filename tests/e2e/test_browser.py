@@ -548,3 +548,45 @@ def test_everyone_can_manage_events_without_signing_in(playwright, server):
     expect(page.locator("a.event-row", has_text="Без пароля")).to_have_count(0)
     assert context.cookies() == [] or all(c["name"] != "admin_session" for c in context.cookies())
     browser.close()
+
+
+def wait_for_styles(server, count, timeout=300):
+    """New uploads get their B&W Editorial / Editorial Film versions in the background."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        styles = httpx.get(f"{server}/readyz").json()["styles"]
+        if styles["done"] >= count:
+            return styles
+        time.sleep(2)
+    raise AssertionError(f"styles not ready: {styles}")
+
+
+def test_mobile_viewer_switches_versions_and_downloads_the_chosen_one(playwright, server, event_link, fake_video, tmp_path):
+    assert wait_for_styles(server, 5)["failed"] == 0
+    browser = camera_browser(playwright, fake_video)
+    context = browser.new_context(**playwright.devices["Pixel 7"], permissions=["camera"], bypass_csp=True,
+                                  accept_downloads=True)
+    page = context.new_page()
+    camera_flow(page, event_link)
+    searches = track_searches(page)
+    page.locator("#result-grid .tile-img").first.click()
+    expect(page.locator("#viewer")).to_be_visible()
+    switch = page.locator("#viewer-styles")
+    expect(switch).to_be_visible()
+    assert switch.locator("button").all_inner_texts() == ["Оригинал", "B&W Editorial", "Editorial Film"]
+    names = []
+    for title, key in (("B&W Editorial", "bw_editorial"), ("Editorial Film", "editorial_film"), ("Оригинал", None)):
+        switch.get_by_role("button", name=title).click()
+        expect(switch.locator('button[aria-pressed="true"]')).to_have_text(title)
+        page.wait_for_function(f"document.getElementById('viewer-img').src.includes({key!r})" if key else
+                               "!document.getElementById('viewer-img').src.includes('style=')")
+        with page.expect_download() as info:
+            page.click("#viewer-download")
+        names.append(info.value.suggested_filename)
+    assert [n.split("-", 2)[-1] for n in names] == ["bw-editorial.jpg", "editorial-film.jpg", "original.jpg"]
+    assert searches == []                                   # switching versions never searches again
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
+    switch.get_by_role("button", name="Editorial Film").click()
+    page.wait_for_timeout(1500)
+    page.screenshot(path=str(tmp_path / "mobile-viewer.png"))
+    browser.close()

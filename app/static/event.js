@@ -467,6 +467,35 @@
   let viewerSource = null;   // element the photo grew out of, for the way back
   let viewerToken = 0;
   let viewerClosing = false;
+  let viewerStyle = "original"; // chosen version; kept while stepping through photos
+  const viewerStyles = $("viewer-styles");
+
+  function versionOf(photo) {  // the chosen version of a photo, or its original if it has no styles yet
+    const list = photo.styles || [];
+    return list.find((s) => s.key === viewerStyle) || list[0] || { key: "original", view: photo.view, download: photo.download };
+  }
+
+  function renderStyleSwitch(photo) {
+    const list = photo.styles || [];
+    viewerStyles.hidden = list.length < 2;
+    if (viewerStyles.hidden) return;
+    const current = versionOf(photo).key;
+    viewerStyles.replaceChildren(...list.map((s) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.style = s.key;
+      b.textContent = s.title;
+      b.setAttribute("aria-pressed", String(s.key === current));
+      return b;
+    }));
+  }
+
+  viewerStyles.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-style]");
+    if (!b || b.dataset.style === viewerStyle) return;
+    viewerStyle = b.dataset.style;
+    showInViewer(viewerIndex, true);   // only loads the other version of the same photo: no new search
+  });
 
   function sourceFor(index) {
     if (viewerIsMatch) return grid.querySelectorAll(".tile-img")[index] || null;
@@ -474,14 +503,22 @@
     return null;
   }
 
-  function showInViewer(index) {
+  function showInViewer(index, styleSwitch = false) {
     viewerIndex = (index + viewerList.length) % viewerList.length;
     const photo = viewerList[viewerIndex];
+    const version = versionOf(photo);
     const token = ++viewerToken;
-    viewerImg.src = photo.thumb || photo.view;      // already in the browser: shows at once
+    if (!styleSwitch) viewerImg.src = photo.thumb || version.view;  // already in the browser: shows at once
+    viewerImg.classList.toggle("is-loading", styleSwitch || version.key !== "original");
     const sharp = new Image();
-    sharp.onload = () => { if (token === viewerToken) viewerImg.src = photo.view; };
-    sharp.src = photo.view;
+    sharp.onload = () => {
+      if (token !== viewerToken) return;
+      viewerImg.src = version.view;
+      viewerImg.classList.remove("is-loading");
+    };
+    sharp.onerror = () => { if (token === viewerToken) viewerImg.classList.remove("is-loading"); };
+    sharp.src = version.view;
+    renderStyleSwitch(photo);
     const n = viewerIndex + 1;
     $("viewer-title").textContent = viewerIsMatch ? `Возможное совпадение ${n}` : `№ ${String(n).padStart(3, "0")}`;
     $("viewer-count").textContent = `${n} из ${viewerList.length}`;
@@ -489,11 +526,14 @@
     $("viewer-note").textContent = viewerIsMatch
       ? (photo.strength === "higher" ? "Сильное сходство." : "Слабое сходство — проверьте, вы ли это.") +
         " Автоматическое распознавание лиц может ошибаться."
-      : "«Скачать» сохраняет чистую копию фотографии — без данных о месте съёмки и камере.";
-    $("viewer-download").href = photo.download;
+      : "«Скачать» сохраняет выбранную версию фотографии — без данных о месте съёмки и камере.";
+    const download = $("viewer-download");
+    download.href = version.download;
+    download.setAttribute("aria-label", photo.styles ? `Скачать — ${version.title}` : "Скачать");
+    if (styleSwitch) return;
     for (const step of [1, -1]) { // have the neighbours ready, so stepping through feels instant
       const next = viewerList[(viewerIndex + step + viewerList.length) % viewerList.length];
-      if (next) new Image().src = next.view;
+      if (next) new Image().src = versionOf(next).view;
     }
   }
 

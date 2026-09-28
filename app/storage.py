@@ -4,6 +4,8 @@ data/events/<event_id>/originals/<random>.<ext>   the uploaded file (admin only)
 data/events/<event_id>/display/<photo_id>.jpg     metadata-free copy for visitor downloads (max 4096 px)
 data/events/<event_id>/previews/<photo_id>.jpg    shown when a photo is opened (2048 px)
 data/events/<event_id>/thumbs/<photo_id>.jpg      galleries (480 px)
+data/events/<event_id>/processed/<style>/full/<photo_id>.jpg      styled download (app.styles, max 4096 px)
+data/events/<event_id>/processed/<style>/preview/<photo_id>.jpg   styled version shown in the viewer (2048 px)
 data/incoming/<random>.part                       uploads being received (deleted or moved at once)
 """
 import os
@@ -52,8 +54,20 @@ def thumb_path(event_id: int, photo_id: int) -> Path:
     return event_dir(event_id) / "thumbs" / f"{int(photo_id)}.jpg"
 
 
+def styled_path(event_id: int, style: str, photo_id: int, kind: str = "full") -> Path:
+    if kind not in ("full", "preview"):
+        raise ValueError(kind)
+    return event_dir(event_id) / "processed" / Path(style).name / kind / f"{int(photo_id)}.jpg"
+
+
+def styled_paths(event_id: int, photo_id: int) -> list[Path]:
+    from .styles import STYLES
+    return [styled_path(event_id, s, photo_id, k) for s in STYLES for k in ("full", "preview")]
+
+
 def derived_paths(event_id: int, photo_id: int) -> list[Path]:
-    return [display_path(event_id, photo_id), preview_path(event_id, photo_id), thumb_path(event_id, photo_id)]
+    return [display_path(event_id, photo_id), preview_path(event_id, photo_id), thumb_path(event_id, photo_id),
+            *styled_paths(event_id, photo_id)]
 
 
 def place(src: Path, dest: Path) -> None:
