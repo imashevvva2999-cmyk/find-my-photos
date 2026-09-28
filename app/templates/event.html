@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ event.name }} · Мои фото{% endblock %}
+{% block title %}{{ event.name }} · Технокадр{% endblock %}
 {% block body_class %}page page-visitor{% if event.is_open %} has-library{% endif %}{% endblock %}
 {% block nav %}
 {% if event.is_open %}
@@ -144,7 +144,7 @@
 {% block overlays %}
 {% if event.is_open %}
 <div id="splash" class="splash desktop-only" aria-hidden="true">
-  <span class="splash-mark">Мои<em>фото</em></span>
+  <span class="splash-mark">Технокадр</span>
   <span class="splash-bar"><s id="splash-bar"></s></span>
   <span class="splash-tag">{{ event.name }}</span>
 </div>

@@ -35,3 +35,17 @@ def test_admin_shows_the_public_visitor_address_when_configured(admin, monkeypat
     assert f'value="http://testserver/e/{token}"' in admin.get(f"/admin/events/{event_id}").text
     monkeypatch.setattr(main, "settings", replace(main.settings, public_base_url="https://photos.example.org"))
     assert f'value="https://photos.example.org/e/{token}"' in admin.get(f"/admin/events/{event_id}").text
+
+
+def test_site_is_called_tekhnokadr_and_event_names_are_unchanged(admin, client):
+    """The SITE is "Технокадр" (header and tab title); events keep their own names."""
+    _, token = create_event(admin, "Все фото")
+    visitor = client.get(f"/e/{token}").text
+    assert "<title>Все фото · Технокадр</title>" in visitor
+    assert '<span class="brand wordmark">Технокадр</span>' in visitor
+    assert '<h1 id="event-title" class="headline">Все фото</h1>' in visitor
+    events_page = admin.get("/admin").text
+    assert '<span class="brand wordmark">Технокадр</span>' in events_page and "<strong>Все фото</strong>" in events_page
+    assert "Технокадр" in client.get("/e/not-a-real-token-at-all-000").text
+    for page in (visitor, events_page):
+        assert "Мои фото" not in page and "Мои<em>" not in page
